@@ -33,6 +33,7 @@ const TABS = [
   { id:"ruta",     icon:"🗺️", label:"Ruta",     color:"#38a169" },
   { id:"gastos",   icon:"💰", label:"Gastos",   color:"#d69e2e" },
   { id:"alquiler", icon:"⏱️", label:"Alquiler", color:"#805ad5" },
+  { id:"config",   icon:"⚙️", label:"Config",   color:"#4a5568" },
 ];
 
 function fmtMoney(n){ return "$"+(Math.round(n)||0).toLocaleString("es-AR"); }
@@ -57,7 +58,7 @@ const S = {
   row:  { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #f4f4f4" },
 };
 
-// ── MODALES (fuera de App para evitar re-renders) ──────────
+// ── MODALES ────────────────────────────────────────────────
 function ModalViaje({ fV, setFV, onCrear, onCerrar }){
   return(
     <div style={S.ovr} onClick={onCerrar}>
@@ -142,7 +143,74 @@ function ModalNafta({ fN, setFN, litros, costoN, onAgregarComoGasto, onCerrar })
   );
 }
 
-// ── PANTALLAS (fuera de App) ───────────────────────────────
+// ── PANTALLAS ──────────────────────────────────────────────
+function PantallaConfig({ apiKey, setApiKey }){
+  const [tmp, setTmp] = useState(apiKey);
+  const [guardado, setGuardado] = useState(false);
+  const guardar = () => {
+    setApiKey(tmp.trim());
+    setGuardado(true);
+    setTimeout(()=>setGuardado(false), 2000);
+  };
+  return(
+    <div>
+      <div style={S.hdr("#4a5568")}>
+        <div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Configuración</div>
+        <div style={{fontSize:13,opacity:.8}}>Ajustes de la app</div>
+      </div>
+      <div style={{padding:16}}>
+        <div style={S.card}>
+          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:6}}>🤖 Clave de IA (API Key)</div>
+          <div style={{fontSize:13,color:"#718096",marginBottom:12,lineHeight:1.5}}>
+            Para usar la búsqueda de rutas y hospedajes con IA, necesitás una clave de Anthropic.
+            <br/><br/>
+            📌 La conseguís gratis en: <strong>console.anthropic.com</strong>
+            <br/>
+            🔒 La clave solo se guarda en memoria, no queda en ningún servidor.
+          </div>
+          <label style={{...S.lbl,marginTop:0}}>Tu API Key</label>
+          <input
+            style={{...S.inp, fontFamily:"monospace", fontSize:12}}
+            type="password"
+            placeholder="sk-ant-api03-..."
+            value={tmp}
+            onChange={e=>setTmp(e.target.value)}
+          />
+          <button style={S.btn(guardado?"#38a169":"#4a5568")} onClick={guardar}>
+            {guardado ? "✅ ¡Guardada!" : "💾 Guardar clave"}
+          </button>
+          {apiKey && (
+            <div style={{marginTop:10,padding:10,background:"#f0fff4",borderRadius:8,textAlign:"center"}}>
+              <span style={{fontSize:13,color:"#276749"}}>✅ Clave configurada — la IA está lista</span>
+            </div>
+          )}
+          {!apiKey && (
+            <div style={{marginTop:10,padding:10,background:"#fffbeb",borderRadius:8,textAlign:"center"}}>
+              <span style={{fontSize:13,color:"#744210"}}>⚠️ Sin clave — la búsqueda con IA no funcionará</span>
+            </div>
+          )}
+        </div>
+
+        <div style={S.card}>
+          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:8}}>📖 ¿Cómo obtener la API Key?</div>
+          {[
+            ["1️⃣","Entrá a console.anthropic.com"],
+            ["2️⃣","Creá una cuenta gratuita"],
+            ["3️⃣","Andá a 'API Keys' en el menú"],
+            ["4️⃣","Hacé click en 'Create Key'"],
+            ["5️⃣","Copiá la clave y pegala arriba"],
+          ].map(([n,t])=>(
+            <div key={n} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f4f4f4",alignItems:"center"}}>
+              <span style={{fontSize:16}}>{n}</span>
+              <span style={{fontSize:13,color:"#4a5568"}}>{t}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PantallaInicio({ activo, tRest, pct, gastos, total, alerta, viajes, histG, setActivo, setGastos, setReco, setModal }){
   return(
     <div>
@@ -218,7 +286,7 @@ function PantallaInicio({ activo, tRest, pct, gastos, total, alerta, viajes, his
   );
 }
 
-function PantallaRuta({ activo, reco, loading, buscarReco, setReco, setTab }){
+function PantallaRuta({ activo, reco, loading, apiKey, buscarReco, setReco, setTab }){
   return(
     <div>
       <div style={S.hdr("#38a169")}>
@@ -231,6 +299,13 @@ function PantallaRuta({ activo, reco, loading, buscarReco, setReco, setTab }){
             <div style={{fontSize:48}}>📍</div>
             <div style={{color:"#718096",marginTop:8}}>Primero creá un viaje en Inicio</div>
             <button style={S.btn("#38a169")} onClick={()=>setTab("inicio")}>Ir a Inicio</button>
+          </div>
+        ) : !apiKey ? (
+          <div style={{...S.card,textAlign:"center",padding:32}}>
+            <div style={{fontSize:44}}>🔑</div>
+            <div style={{fontSize:15,fontWeight:"bold",color:"#2d3748",marginTop:10}}>Necesitás configurar tu API Key</div>
+            <div style={{fontSize:13,color:"#718096",margin:"8px 0 4px"}}>Andá a ⚙️ Config para ingresar tu clave de Anthropic y activar la búsqueda con IA</div>
+            <button style={S.btn("#4a5568")} onClick={()=>setTab("config")}>⚙️ Ir a Configuración</button>
           </div>
         ) : (
           <>
@@ -252,7 +327,7 @@ function PantallaRuta({ activo, reco, loading, buscarReco, setReco, setTab }){
             {reco && reco.error && (
               <div style={{...S.card,textAlign:"center",padding:24}}>
                 <div style={{fontSize:36}}>⚠️</div>
-                <div style={{color:"#e53e3e",marginTop:8}}>{reco.error}</div>
+                <div style={{color:"#e53e3e",marginTop:8,fontSize:14}}>{reco.error}</div>
                 <button style={S.btn("#38a169")} onClick={buscarReco}>Reintentar</button>
               </div>
             )}
@@ -439,6 +514,7 @@ function App(){
   const [pct,     setPct]     = useState(0);
   const [reco,    setReco]    = useState(null);
   const [loading, setLoading] = useState(false);
+  const [apiKey,  setApiKey]  = useState("");
 
   const [fV, setFV] = useState({ origen:"", destino:"", auto:"", km:"", fRetiro:"", fDevol:"", pers:"2" });
   const [fG, setFG] = useState({ cat:"nafta", desc:"", monto:"" });
@@ -483,12 +559,17 @@ function App(){
   };
 
   const buscarReco = async () => {
-    if(!activo) return;
+    if(!activo||!apiKey) return;
     setLoading(true); setReco(null);
     try{
       const res=await fetch("https://api.anthropic.com/v1/messages",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key": apiKey,
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
         body:JSON.stringify({
           model:"claude-sonnet-4-20250514",
           max_tokens:1200,
@@ -496,10 +577,11 @@ function App(){
         })
       });
       const data=await res.json();
+      if(data.error){ setReco({error:"Error de API: "+data.error.message}); setLoading(false); return; }
       const txt=data.content[0].text.replace(/```json|```/g,"").trim();
       setReco(JSON.parse(txt));
     }catch(e){
-      setReco({error:"No se pudo obtener información. Revisá tu conexión e intentá de nuevo."});
+      setReco({error:"No se pudo conectar. Verificá tu API Key en ⚙️ Config y tu conexión a internet."});
     }
     setLoading(false);
   };
@@ -507,9 +589,10 @@ function App(){
   return(
     <div style={S.app}>
       {tab==="inicio"   && <PantallaInicio   activo={activo} tRest={tRest} pct={pct} gastos={gastos} total={total} alerta={alerta} viajes={viajes} histG={histG} setActivo={setActivo} setGastos={setGastos} setReco={setReco} setModal={setModal}/>}
-      {tab==="ruta"     && <PantallaRuta     activo={activo} reco={reco} loading={loading} buscarReco={buscarReco} setReco={setReco} setTab={setTab}/>}
+      {tab==="ruta"     && <PantallaRuta     activo={activo} reco={reco} loading={loading} apiKey={apiKey} buscarReco={buscarReco} setReco={setReco} setTab={setTab}/>}
       {tab==="gastos"   && <PantallaGastos   gastos={gastos} setGastos={setGastos} total={total} pers={pers} setPers={setPers} porPers={porPers} setModal={setModal}/>}
       {tab==="alquiler" && <PantallaAlquiler activo={activo} tRest={tRest} pct={pct} alerta={alerta} setTab={setTab}/>}
+      {tab==="config"   && <PantallaConfig   apiKey={apiKey} setApiKey={setApiKey}/>}
 
       {modal==="viaje" && <ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)}/>}
       {modal==="gasto" && <ModalGasto fG={fG} setFG={setFG} onAgregar={agregarGasto} onCerrar={()=>setModal(null)}/>}
@@ -518,8 +601,8 @@ function App(){
       <div style={S.nav}>
         {TABS.map(t=>(
           <button key={t.id} style={S.nvb(tab===t.id,t.color)} onClick={()=>setTab(t.id)}>
-            <span style={{fontSize:20}}>{t.icon}</span>
-            <span style={{fontSize:10,fontWeight:tab===t.id?"bold":"normal"}}>{t.label}</span>
+            <span style={{fontSize:18}}>{t.icon}</span>
+            <span style={{fontSize:9,fontWeight:tab===t.id?"bold":"normal"}}>{t.label}</span>
           </button>
         ))}
       </div>

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ViajeFácil 🚗</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #edf2f7; font-family: system-ui, -apple-system, sans-serif; }
+input:focus { outline: 2px solid #4299e1; border-color: #4299e1; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const CATS = {
+  nafta:       { icon:"⛽", label:"Nafta",       color:"#e53e3e" },
+  comida:      { icon:"🍔", label:"Comida",      color:"#ed8936" },
+  hospedaje:   { icon:"🏨", label:"Hospedaje",   color:"#3182ce" },
+  actividades: { icon:"🎡", label:"Actividades", color:"#38a169" },
+  otro:        { icon:"📦", label:"Otro",         color:"#718096" },
+};
+
+function fmtMoney(n){ return "$"+(Math.round(n)||0).toLocaleString("es-AR"); }
+function fmtDate(str){
+  if(!str) return "—";
+  try{ return new Date(str).toLocaleString("es-AR",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }
+  catch{ return str; }
+}
+
+const S = {
+  app:  { maxWidth:430, margin:"0 auto", minHeight:"100vh", background:"#f7fafc", position:"relative", paddingBottom:72 },
+  hdr:  (c) => ({ background:c, padding:"16px 20px 14px", color:"white" }),
+  card: { background:"white", borderRadius:14, padding:16, marginBottom:12, boxShadow:"0 1px 6px rgba(0,0,0,0.08)" },
+  btn:  (c,lite) => ({ background:lite?`${c}18`:c, color:lite?c:"white", border:lite?`1.5px solid ${c}`:"none", borderRadius:10, padding:"11px 16px", fontWeight:"bold", fontSize:14, cursor:"pointer", width:"100%", marginTop:8, display:"block" }),
+  inp:  { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:10, padding:"10px 13px", fontSize:14, background:"white" },
+  lbl:  { fontSize:12, color:"#718096", marginBottom:5, display:"block", marginTop:12 },
+  ovr:  { position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"flex-end", justifyContent:"center" },
+  sht:  { background:"white", borderRadius:"18px 18px 0 0", padding:"20px 20px 36px", width:"100%", maxWidth:430, maxHeight:"90vh", overflowY:"auto" },
+  nav:  { position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:430, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:200 },
+  nvb:  (a,c) => ({ flex:1, padding:"10px 0 8px", background:"none", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:2, color:a?c:"#a0aec0" }),
+  bdg:  (c) => ({ background:`${c}18`, color:c, borderRadius:20, padding:"3px 9px", fontSize:12, fontWeight:"bold", display:"inline-block" }),
+  row:  { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #f4f4f4" },
+};
+
+const TABS = [
+  { id:"inicio",   icon:"🏠", label:"Inicio",   color:"#2b6cb0" },
+  { id:"ruta",     icon:"🗺️", label:"Ruta",     color:"#38a169" },
+  { id:"gastos",   icon:"💰", label:"Gastos",   color:"#d69e2e" },
+  { id:"alquiler", icon:"⏱️", label:"Alquiler", color:"#805ad5" },
+];
+
+function App(){
+  const [tab,     setTab]     = useState("inicio");
+  const [viajes,  setViajes]  = useState([]);
+  const [activo,  setActivo]  = useState(null);
+  const [gastos,  setGastos]  = useState([]);
+  const [histG,   setHistG]   = useState({});
+  const [pers,    setPers]    = useState(2);
+  const [modal,   setModal]   = useState(null);
+  const [tRest,   setTRest]   = useState("");
+  const [pct,     setPct]     = useState(0);
+  const [reco,    setReco]    = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const [fV, setFV] = useState({ origen:"", destino:"", auto:"", km:"", fRetiro:"", fDevol:"", pers:"2" });
+  const [fG, setFG] = useState({ cat:"nafta", desc:"", monto:"" });
+  const [fN, setFN] = useState({ km:"", rend:"12", precio:"" });
+
+  // countdown
+  useEffect(()=>{
+    if(!activo) return;
+    const calc = () => {
+      const now = new Date();
+      const dev = new Date(activo.fDevol);
+      const ini = new Date(activo.fRetiro);
+      const diff = dev - now;
+      const total = dev - ini;
+      const usado = now - ini;
+      setPct(Math.min(100, Math.max(0, Math.round((usado/total)*100))));
+      if(diff <= 0){ setTRest("¡Tiempo vencido!"); setPct(100); return; }
+      const d=Math.floor(diff/86400000), h=Math.floor((diff%86400000)/3600000), m=Math.floor((diff%3600000)/60000);
+      setTRest(`${d}d ${h}h ${m}m`);
+    };
+    calc();
+    const iv = setInterval(calc, 30000);
+    return () => clearInterval(iv);
+  }, [activo]);
+
+  const total    = gastos.reduce((s,g) => s+g.monto, 0);
+  const porPers  = pers>0 ? Math.ceil(total/pers) : total;
+  const litros   = fN.km && fN.rend ? (parseFloat(fN.km)/parseFloat(fN.rend)).toFixed(1) : 0;
+  const costoN   = litros && fN.precio ? Math.round(litros * parseFloat(fN.precio)) : 0;
+  const alerta   = activo && (() => { const d=new Date(activo.fDevol)-new Date(); return d>0 && d<3*3600000; })();
+
+  const crearViaje = () => {
+    if(!fV.origen || !fV.destino || !fV.fRetiro || !fV.fDevol) return;
+    const v = { id:Date.now(), ...fV, pers:parseInt(fV.pers)||2 };
+    if(activo) setHistG(h => ({...h, [activo.id]: gastos}));
+    setViajes(p => [v,...p]);
+    setActivo(v);
+    setGastos([]);
+    setPers(v.pers);
+    setReco(null);
+    setModal(null);
+    setFV({ origen:"", destino:"", auto:"", km:"", fRetiro:"", fDevol:"", pers:"2" });
+    setTab("inicio");
+  };
+
+  const agregarGasto = () => {
+    if(!fG.monto) return;
+    setGastos(p => [...p, { id:Date.now(), cat:fG.cat, desc:fG.desc, monto:parseFloat(fG.monto), fecha:new Date().toLocaleDateString("es-AR") }]);
+    setModal(null);
+    setFG({ cat:"nafta", desc:"", monto:"" });
+  };
+
+  const buscarReco = async () => {
+    if(!activo) return;
+    setLoading(true); setReco(null);
+    try{
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1200,
+          messages:[{ role:"user", content:
+            `Soy argentino, viajo desde ${activo.origen} hasta ${activo.destino} en auto con familia.
+Respondé SOLO con JSON válido sin texto extra ni markdown backticks:
+{"rutas":[{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"},{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"}],"lugares":[{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"}],"hospedajes":[{"nombre":"string","tipo":"camping","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"hostel","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"cabaña","precio":"medio","descripcion":"string"}]}`
+          }]
+        })
+      });
+      const data = await res.json();
+      const txt = data.content[0].text.replace(/```json|```/g,"").trim();
+      setReco(JSON.parse(txt));
+    } catch(e){
+      setReco({ error:"No se pudo obtener información. Revisá tu conexión e intentá de nuevo." });
+    }
+    setLoading(false);
+  };
+
+  // ── PANTALLAS ──────────────────────────────────────────
+  function PInicio(){
+    return(
+      <div>
+        <div style={S.hdr("#2b6cb0")}>
+          <div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div>
+          <div style={{fontSize:13,opacity:.8}}>Tu compañero de viaje</div>
+        </div>
+        <div style={{padding:16}}>
+          {!activo ? (
+            <div style={{...S.card,textAlign:"center",padding:44}}>
+              <div style={{fontSize:56}}>🗺️</div>
+              <div style={{fontSize:19,fontWeight:"bold",color:"#2d3748",marginTop:14}}>¡Planificá tu viaje!</div>
+              <div style={{color:"#718096",fontSize:14,margin:"8px 0 4px"}}>Creá un viaje para empezar a gestionar todo</div>
+              <button style={S.btn("#2b6cb0")} onClick={()=>setModal("viaje")}>+ Crear nuevo viaje</button>
+            </div>
+          ) : (
+            <>
+              <div style={{...S.card,background:"linear-gradient(135deg,#2b6cb0,#4299e1)",color:"white"}}>
+                <div style={{fontSize:12,opacity:.8}}>✈️ Viaje activo</div>
+                <div style={{fontSize:20,fontWeight:"bold",marginTop:4}}>📍 {activo.origen} → {activo.destino}</div>
+                {activo.auto && <div style={{fontSize:13,opacity:.8,marginTop:3}}>🚗 {activo.auto}</div>}
+                <div style={{fontSize:12,opacity:.7,marginTop:2}}>👨‍👩‍👧 {activo.pers} personas</div>
+              </div>
+              {alerta && (
+                <div style={{background:"#fed7d7",border:"2px solid #e53e3e",borderRadius:12,padding:14,marginBottom:12,textAlign:"center"}}>
+                  <div style={{fontWeight:"bold",color:"#c53030"}}>⚠️ ¡Menos de 3 horas para devolver el auto!</div>
+                </div>
+              )}
+              <div style={{...S.card,textAlign:"center"}}>
+                <div style={{fontSize:12,color:"#718096"}}>⏱ Tiempo restante del alquiler</div>
+                <div style={{fontSize:40,fontWeight:"bold",color:pct>80?"#e53e3e":"#2b6cb0",margin:"8px 0"}}>{tRest||"Calculando..."}</div>
+                <div style={{fontSize:12,color:"#718096"}}>Devolver: {fmtDate(activo.fDevol)}</div>
+                <div style={{marginTop:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#a0aec0",marginBottom:4}}>
+                    <span>Tiempo usado: {pct}%</span><span>Restante: {100-pct}%</span>
+                  </div>
+                  <div style={{background:"#e2e8f0",borderRadius:8,height:10,overflow:"hidden"}}>
+                    <div style={{background:pct>80?"#e53e3e":"#2b6cb0",height:"100%",width:`${pct}%`,borderRadius:8,transition:"width .5s"}}/>
+                  </div>
+                </div>
+              </div>
+              <div style={S.card}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <span style={{fontWeight:"bold",color:"#2d3748"}}>💰 Gastos del viaje</span>
+                  <span style={S.bdg("#e53e3e")}>{fmtMoney(total)}</span>
+                </div>
+                {Object.entries(CATS).map(([k,c])=>{
+                  const t=gastos.filter(g=>g.cat===k).reduce((s,g)=>s+g.monto,0);
+                  if(!t) return null;
+                  return <div key={k} style={S.row}><span style={{fontSize:13}}>{c.icon} {c.label}</span><span style={{fontSize:13,color:c.color,fontWeight:"bold"}}>{fmtMoney(t)}</span></div>;
+                })}
+                {gastos.length===0 && <div style={{fontSize:13,color:"#a0aec0",textAlign:"center",padding:8}}>Sin gastos registrados aún</div>}
+              </div>
+              <button style={S.btn("#2b6cb0",true)} onClick={()=>setModal("viaje")}>+ Nuevo Viaje</button>
+            </>
+          )}
+          {viajes.length>1 && (
+            <div style={S.card}>
+              <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:10}}>📋 Historial de viajes</div>
+              {viajes.slice(1).map(v=>(
+                <div key={v.id} style={S.row}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:"bold",color:"#2d3748"}}>{v.origen} → {v.destino}</div>
+                    <div style={{fontSize:11,color:"#a0aec0"}}>{fmtDate(v.fRetiro)}</div>
+                  </div>
+                  <button onClick={()=>{setActivo(v);setGastos(histG[v.id]||[]);setReco(null);}} style={{...S.btn("#2b6cb0",true),width:"auto",marginTop:0,padding:"5px 12px",fontSize:12}}>Ver</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function PRuta(){
+    return(
+      <div>
+        <div style={S.hdr("#38a169")}>
+          <div style={{fontSize:22,fontWeight:"bold"}}>🗺️ Rutas y Lugares</div>
+          <div style={{fontSize:13,opacity:.8}}>{activo?`${activo.origen} → ${activo.destino}`:"Creá un viaje primero"}</div>
+        </div>
+        <div style={{padding:16}}>
+          {!activo ? (
+            <div style={{...S.card,textAlign:"center",padding:36}}>
+              <div style={{fontSize:48}}>📍</div>
+              <div style={{color:"#718096",marginTop:8}}>Primero creá un viaje en Inicio</div>
+              <button style={S.btn("#38a169")} onClick={()=>setTab("inicio")}>Ir a Inicio</button>
+            </div>
+          ) : (
+            <>
+              {!reco && !loading && (
+                <div style={{...S.card,textAlign:"center",padding:30}}>
+                  <div style={{fontSize:48}}>🤖</div>
+                  <div style={{fontSize:16,fontWeight:"bold",color:"#2d3748",marginTop:10}}>Buscar con Inteligencia Artificial</div>
+                  <div style={{fontSize:13,color:"#718096",margin:"8px 0 4px"}}>Rutas, lugares turísticos y hospedajes económicos / camping cerca de tu destino</div>
+                  <button style={S.btn("#38a169")} onClick={buscarReco}>🔍 Buscar ahora</button>
+                </div>
+              )}
+              {loading && (
+                <div style={{...S.card,textAlign:"center",padding:36}}>
+                  <div style={{fontSize:44}}>🔍</div>
+                  <div style={{color:"#718096",marginTop:10}}>La IA está buscando información...</div>
+                  <div style={{color:"#a0aec0",fontSize:12,marginTop:6}}>Puede tardar unos segundos</div>
+                </div>
+              )}
+              {reco && reco.error && (
+                <div style={{...S.card,textAlign:"center",padding:24}}>
+                  <div style={{fontSize:36}}>⚠️</div>
+                  <div style={{color:"#e53e3e",marginTop:8}}>{reco.error}</div>
+                  <button style={S.btn("#38a169")} onClick={buscarReco}>Reintentar</button>
+                </div>
+              )}
+              {reco && !reco.error && (
+                <>
+                  <div style={S.card}>
+                    <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:10}}>🛣️ Opciones de ruta</div>
+                    {reco.rutas?.map((r,i)=>(
+                      <div key={i} style={{border:`2px solid ${i===0?"#38a169":"#e2e8f0"}`,borderRadius:11,padding:12,marginBottom:8,background:i===0?"#f0fff4":"white"}}>
+                        <div style={{fontWeight:"bold",color:i===0?"#276749":"#2d3748"}}>{i===0?"✅ ":""}{r.nombre}</div>
+                        <div style={{fontSize:12,color:"#718096",marginTop:3}}>📏 {r.km} km · ⏱ {r.tiempo}</div>
+                        <div style={{fontSize:13,color:"#4a5568",marginTop:4}}>{r.descripcion}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={S.card}>
+                    <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:10}}>📸 Lugares para visitar</div>
+                    {reco.lugares?.map((l,i)=>(
+                      <div key={i} style={{padding:"10px 0",borderBottom:i<(reco.lugares.length-1)?"1px solid #f4f4f4":"none"}}>
+                        <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14}}>⭐ {l.nombre}</div>
+                        <div style={{fontSize:13,color:"#4a5568",marginTop:2}}>{l.descripcion}</div>
+                        <div style={{fontSize:12,color:"#718096",marginTop:2}}>🕐 {l.tiempo}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={S.card}>
+                    <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:10}}>🏕️ Hospedajes económicos y camping</div>
+                    {reco.hospedajes?.map((h,i)=>(
+                      <div key={i} style={{border:"1.5px solid #e2e8f0",borderRadius:10,padding:12,marginBottom:8}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
+                          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14}}>
+                            {h.tipo==="camping"?"🏕️":h.tipo==="hostel"?"🛏️":"🏠"} {h.nombre}
+                          </div>
+                          <span style={S.bdg(h.precio==="bajo"?"#38a169":"#d69e2e")}>{h.precio==="bajo"?"💚 Económico":"💛 Precio medio"}</span>
+                        </div>
+                        <div style={{fontSize:13,color:"#4a5568",marginTop:6}}>{h.descripcion}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <button style={S.btn("#38a169",true)} onClick={()=>setReco(null)}>🔄 Buscar de nuevo</button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function PGastos(){
+    return(
+      <div>
+        <div style={S.hdr("#d69e2e")}>
+          <div style={{fontSize:22,fontWeight:"bold"}}>💰 Gastos del Viaje</div>
+          <div style={{fontSize:13,opacity:.8}}>Total: {fmtMoney(total)}</div>
+        </div>
+        <div style={{padding:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+            {Object.entries(CATS).map(([k,c])=>{
+              const t=gastos.filter(g=>g.cat===k).reduce((s,g)=>s+g.monto,0);
+              return(
+                <div key={k} style={{...S.card,textAlign:"center",padding:12,marginBottom:0,borderLeft:`4px solid ${c.color}`}}>
+                  <div style={{fontSize:22}}>{c.icon}</div>
+                  <div style={{fontSize:12,color:"#718096",marginTop:2}}>{c.label}</div>
+                  <div style={{fontSize:16,fontWeight:"bold",color:c.color}}>{fmtMoney(t)}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={S.card}>
+            <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:10}}>👨‍👩‍👧 División por persona</div>
+            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:10}}>
+              <span style={{fontSize:13,color:"#718096"}}>Personas:</span>
+              <button onClick={()=>setPers(p=>Math.max(1,p-1))} style={{width:32,height:32,borderRadius:16,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",fontWeight:"bold",fontSize:18}}>-</button>
+              <span style={{fontWeight:"bold",fontSize:20,minWidth:24,textAlign:"center"}}>{pers}</span>
+              <button onClick={()=>setPers(p=>p+1)} style={{width:32,height:32,borderRadius:16,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",fontWeight:"bold",fontSize:18}}>+</button>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid #f4f4f4"}}>
+              <span style={{color:"#718096",fontSize:14}}>Por persona:</span>
+              <span style={{fontWeight:"bold",color:"#d69e2e",fontSize:22}}>{fmtMoney(porPers)}</span>
+            </div>
+          </div>
+          <button style={S.btn("#d69e2e")} onClick={()=>setModal("gasto")}>+ Agregar Gasto</button>
+          <button style={S.btn("#d69e2e",true)} onClick={()=>setModal("nafta")}>⛽ Calculadora de Nafta</button>
+          {gastos.length>0 && (
+            <div style={S.card}>
+              <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:8}}>📋 Lista de gastos</div>
+              {[...gastos].reverse().map(g=>(
+                <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f4f4f4"}}>
+                  <div>
+                    <span style={{fontSize:14}}>{CATS[g.cat].icon} </span>
+                    <span style={{fontSize:13,color:"#2d3748"}}>{g.desc||CATS[g.cat].label}</span>
+                    <div style={{fontSize:11,color:"#a0aec0"}}>{g.fecha}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontWeight:"bold",color:CATS[g.cat].color}}>{fmtMoney(g.monto)}</span>
+                    <button onClick={()=>setGastos(p=>p.filter(x=>x.id!==g.id))} style={{background:"none",border:"none",color:"#fc8181",cursor:"pointer",fontSize:18,lineHeight:1}}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {gastos.length===0 && (
+            <div style={{...S.card,textAlign:"center",padding:28,color:"#a0aec0"}}>
+              <div style={{fontSize:40}}>💸</div>
+              <div style={{marginTop:8}}>Sin gastos registrados aún</div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function PAlquiler(){
+    return(
+      <div>
+        <div style={S.hdr("#805ad5")}>
+          <div style={{fontSize:22,fontWeight:"bold"}}>⏱️ Control de Alquiler</div>
+          <div style={{fontSize:13,opacity:.8}}>No te pases del tiempo</div>
+        </div>
+        <div style={{padding:16}}>
+          {!activo ? (
+            <div style={{...S.card,textAlign:"center",padding:36}}>
+              <div style={{fontSize:48}}>⏱️</div>
+              <div style={{color:"#718096",marginTop:8}}>Creá un viaje para ver el contador</div>
+              <button style={S.btn("#805ad5")} onClick={()=>setTab("inicio")}>Ir a Inicio</button>
+            </div>
+          ) : (
+            <>
+              {alerta && (
+                <div style={{background:"#fed7d7",border:"2px solid #e53e3e",borderRadius:12,padding:16,marginBottom:12,textAlign:"center"}}>
+                  <div style={{fontSize:28}}>🚨</div>
+                  <div style={{fontWeight:"bold",color:"#c53030",marginTop:4}}>¡Menos de 3 horas para devolver!</div>
+                </div>
+              )}
+              <div style={{...S.card,textAlign:"center",padding:26}}>
+                <div style={{fontSize:13,color:"#718096"}}>⏱️ Tiempo restante del alquiler</div>
+                <div style={{fontSize:48,fontWeight:"bold",color:pct>80?"#e53e3e":"#553c9a",margin:"10px 0"}}>{tRest||"—"}</div>
+                <div style={{fontSize:13,color:"#718096",marginBottom:18}}>Devolver: {fmtDate(activo.fDevol)}</div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#718096",marginBottom:5}}>
+                  <span>Tiempo usado: {pct}%</span><span>Restante: {100-pct}%</span>
+                </div>
+                <div style={{background:"#e9d8fd",borderRadius:8,height:14,overflow:"hidden"}}>
+                  <div style={{background:pct>80?"#e53e3e":"#805ad5",height:"100%",width:`${pct}%`,borderRadius:8,transition:"width .5s"}}/>
+                </div>
+              </div>
+              <div style={S.card}>
+                <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:10}}>📋 Datos del alquiler</div>
+                {[
+                  ["🚗 Auto",        activo.auto||"No especificado"],
+                  ["📍 Origen",      activo.origen],
+                  ["🏁 Destino",     activo.destino],
+                  ["📅 Retiro",      fmtDate(activo.fRetiro)],
+                  ["📅 Devolución",  fmtDate(activo.fDevol)],
+                  ["🔢 KM al retiro",activo.km ? `${parseInt(activo.km).toLocaleString("es-AR")} km` : "No especificado"],
+                  ["👨‍👩‍👧 Personas",  activo.pers],
+                ].map(([l,v])=>(
+                  <div key={l} style={S.row}>
+                    <span style={{fontSize:13,color:"#718096"}}>{l}</span>
+                    <span style={{fontSize:13,color:"#2d3748",fontWeight:"bold"}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{...S.card,background:"#faf5ff",textAlign:"center"}}>
+                <span style={{fontSize:13,color:"#805ad5"}}>⚠️ Te avisamos cuando queden menos de 3 horas para devolver el auto</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── MODALES ────────────────────────────────────────────
+  function MViaje(){
+    return(
+      <div style={S.ovr} onClick={()=>setModal(null)}>
+        <div style={S.sht} onClick={e=>e.stopPropagation()}>
+          <div style={{fontWeight:"bold",fontSize:19,color:"#2d3748"}}>🚗 Nuevo Viaje</div>
+          <div style={{fontSize:13,color:"#718096",marginBottom:4}}>Completá los datos del viaje</div>
+          <label style={S.lbl}>📍 Desde (origen) *</label>
+          <input style={S.inp} placeholder="Ej: Tucumán" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
+          <label style={S.lbl}>🏁 Hasta (destino) *</label>
+          <input style={S.inp} placeholder="Ej: Tafí del Valle" value={fV.destino} onChange={e=>setFV(p=>({...p,destino:e.target.value}))}/>
+          <label style={S.lbl}>🚗 Auto (opcional)</label>
+          <input style={S.inp} placeholder="Ej: VW Polo blanco" value={fV.auto} onChange={e=>setFV(p=>({...p,auto:e.target.value}))}/>
+          <label style={S.lbl}>🔢 KM al retiro (opcional)</label>
+          <input style={S.inp} type="number" placeholder="Ej: 48320" value={fV.km} onChange={e=>setFV(p=>({...p,km:e.target.value}))}/>
+          <label style={S.lbl}>📅 Fecha y hora de retiro *</label>
+          <input style={S.inp} type="datetime-local" value={fV.fRetiro} onChange={e=>setFV(p=>({...p,fRetiro:e.target.value}))}/>
+          <label style={S.lbl}>📅 Fecha y hora de devolución *</label>
+          <input style={S.inp} type="datetime-local" value={fV.fDevol} onChange={e=>setFV(p=>({...p,fDevol:e.target.value}))}/>
+          <label style={S.lbl}>👨‍👩‍👧 Cantidad de personas</label>
+          <input style={S.inp} type="number" min="1" value={fV.pers} onChange={e=>setFV(p=>({...p,pers:e.target.value}))}/>
+          <button style={S.btn("#2b6cb0")} onClick={crearViaje}>✅ Crear Viaje</button>
+          <button style={S.btn("#718096",true)} onClick={()=>setModal(null)}>Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  function MGasto(){
+    return(
+      <div style={S.ovr} onClick={()=>setModal(null)}>
+        <div style={S.sht} onClick={e=>e.stopPropagation()}>
+          <div style={{fontWeight:"bold",fontSize:19,marginBottom:16,color:"#2d3748"}}>💰 Agregar Gasto</div>
+          <label style={{...S.lbl,marginTop:0}}>Categoría</label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:4}}>
+            {Object.entries(CATS).map(([k,c])=>(
+              <button key={k} onClick={()=>setFG(p=>({...p,cat:k}))} style={{background:fG.cat===k?c.color:"white",color:fG.cat===k?"white":"#4a5568",border:`1.5px solid ${fG.cat===k?c.color:"#e2e8f0"}`,borderRadius:10,padding:"10px 8px",cursor:"pointer",fontSize:13,fontWeight:fG.cat===k?"bold":"normal"}}>
+                {c.icon} {c.label}
+              </button>
+            ))}
+          </div>
+          <label style={S.lbl}>Descripción (opcional)</label>
+          <input style={S.inp} placeholder="Ej: Almuerzo en Tafí" value={fG.desc} onChange={e=>setFG(p=>({...p,desc:e.target.value}))}/>
+          <label style={S.lbl}>Monto ($) *</label>
+          <input style={S.inp} type="number" placeholder="Ej: 4500" value={fG.monto} onChange={e=>setFG(p=>({...p,monto:e.target.value}))}/>
+          <button style={S.btn("#d69e2e")} onClick={agregarGasto}>✅ Agregar Gasto</button>
+          <button style={S.btn("#718096",true)} onClick={()=>setModal(null)}>Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  function MNafta(){
+    return(
+      <div style={S.ovr} onClick={()=>setModal(null)}>
+        <div style={S.sht} onClick={e=>e.stopPropagation()}>
+          <div style={{fontWeight:"bold",fontSize:19,color:"#2d3748"}}>⛽ Calculadora de Nafta</div>
+          <div style={{fontSize:13,color:"#718096",marginBottom:8}}>Estimá cuánto vas a gastar en combustible</div>
+          <label style={{...S.lbl,marginTop:4}}>Kilómetros a recorrer</label>
+          <input style={S.inp} type="number" placeholder="Ej: 250" value={fN.km} onChange={e=>setFN(p=>({...p,km:e.target.value}))}/>
+          <label style={S.lbl}>Rendimiento del auto (km por litro)</label>
+          <input style={S.inp} type="number" placeholder="Ej: 12" value={fN.rend} onChange={e=>setFN(p=>({...p,rend:e.target.value}))}/>
+          <label style={S.lbl}>Precio del litro ($)</label>
+          <input style={S.inp} type="number" placeholder="Ej: 1200" value={fN.precio} onChange={e=>setFN(p=>({...p,precio:e.target.value}))}/>
+          {litros>0 && (
+            <div style={{background:"#ebf8ff",borderRadius:12,padding:20,marginTop:16,textAlign:"center"}}>
+              <div style={{fontSize:12,color:"#718096"}}>Litros necesarios</div>
+              <div style={{fontSize:36,fontWeight:"bold",color:"#2b6cb0"}}>{litros} L</div>
+              {costoN>0 && (
+                <>
+                  <div style={{fontSize:12,color:"#718096",marginTop:12}}>Costo estimado</div>
+                  <div style={{fontSize:30,fontWeight:"bold",color:"#e53e3e"}}>{fmtMoney(costoN)}</div>
+                </>
+              )}
+            </div>
+          )}
+          {costoN>0 && (
+            <button style={S.btn("#d69e2e")} onClick={()=>{
+              setFG({cat:"nafta",desc:`Nafta — ${fN.km} km`,monto:String(costoN)});
+              setModal("gasto");
+            }}>+ Agregar como gasto de nafta</button>
+          )}
+          <button style={S.btn("#718096",true)} onClick={()=>setModal(null)}>Cerrar</button>
+        </div>
+      </div>
+    );
+  }
+
+  const screens = { inicio:<PInicio/>, ruta:<PRuta/>, gastos:<PGastos/>, alquiler:<PAlquiler/> };
+
+  return(
+    <div style={S.app}>
+      {screens[tab]}
+      {modal==="viaje"  && <MViaje/>}
+      {modal==="gasto"  && <MGasto/>}
+      {modal==="nafta"  && <MNafta/>}
+      <div style={S.nav}>
+        {TABS.map(t=>(
+          <button key={t.id} style={S.nvb(tab===t.id,t.color)} onClick={()=>setTab(t.id)}>
+            <span style={{fontSize:20}}>{t.icon}</span>
+            <span style={{fontSize:10,fontWeight:tab===t.id?"bold":"normal"}}>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>

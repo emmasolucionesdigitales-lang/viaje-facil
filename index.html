@@ -162,9 +162,9 @@ function PantallaConfig({ apiKey, setApiKey }){
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:6}}>🤖 Clave de IA (API Key)</div>
           <div style={{fontSize:13,color:"#718096",marginBottom:12,lineHeight:1.5}}>
-            Para usar la búsqueda de rutas y hospedajes con IA, necesitás una clave de Anthropic.
+            Para usar la búsqueda de rutas y hospedajes con IA, necesitás una clave de Groq — es completamente gratuita.
             <br/><br/>
-            📌 La conseguís gratis en: <strong>console.anthropic.com</strong>
+            📌 La conseguís gratis en: <strong>console.groq.com</strong>
             <br/>
             🔒 La clave solo se guarda en memoria, no queda en ningún servidor.
           </div>
@@ -172,7 +172,7 @@ function PantallaConfig({ apiKey, setApiKey }){
           <input
             style={{...S.inp, fontFamily:"monospace", fontSize:12}}
             type="password"
-            placeholder="sk-ant-api03-..."
+            placeholder="gsk_..."
             value={tmp}
             onChange={e=>setTmp(e.target.value)}
           />
@@ -194,7 +194,7 @@ function PantallaConfig({ apiKey, setApiKey }){
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:8}}>📖 ¿Cómo obtener la API Key?</div>
           {[
-            ["1️⃣","Entrá a console.anthropic.com"],
+            ["1️⃣","Entrá a console.groq.com"],
             ["2️⃣","Creá una cuenta gratuita"],
             ["3️⃣","Andá a 'API Keys' en el menú"],
             ["4️⃣","Hacé click en 'Create Key'"],
@@ -562,26 +562,24 @@ function App(){
     if(!activo||!apiKey) return;
     setLoading(true); setReco(null);
     try{
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
+      const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
         method:"POST",
         headers:{
           "Content-Type":"application/json",
-          "x-api-key": apiKey,
-          "anthropic-version":"2023-06-01",
-          "anthropic-dangerous-direct-browser-access":"true"
+          "Authorization":"Bearer "+apiKey
         },
         body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",
+          model:"llama-3.3-70b-versatile",
           max_tokens:1200,
-          messages:[{role:"user",content:`Soy argentino, viajo desde ${activo.origen} hasta ${activo.destino} en auto con familia. Respondé SOLO con JSON válido sin texto extra ni markdown backticks: {"rutas":[{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"},{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"}],"lugares":[{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"}],"hospedajes":[{"nombre":"string","tipo":"camping","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"hostel","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"cabaña","precio":"medio","descripcion":"string"}]}`}]
+          messages:[{role:"system",content:"Sos un asistente de viajes argentino. Respondé siempre en español."},{role:"user",content:`Soy argentino, viajo desde ${activo.origen} hasta ${activo.destino} en auto con familia. Respondé SOLO con JSON válido sin texto extra ni markdown backticks: {"rutas":[{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"},{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"}],"lugares":[{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"}],"hospedajes":[{"nombre":"string","tipo":"camping","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"hostel","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"cabaña","precio":"medio","descripcion":"string"}]}`}]
         })
       });
       const data=await res.json();
-      if(data.error){ setReco({error:"Error de API: "+data.error.message}); setLoading(false); return; }
-      const txt=data.content[0].text.replace(/```json|```/g,"").trim();
+      if(data.error){ setReco({error:"Error: "+(data.error?.message||"Revisá tu API Key de Groq")}); setLoading(false); return; }
+      const txt=data.choices[0].message.content.replace(/```json|```/g,"").trim();
       setReco(JSON.parse(txt));
     }catch(e){
-      setReco({error:"No se pudo conectar. Verificá tu API Key en ⚙️ Config y tu conexión a internet."});
+      setReco({error:"No se pudo conectar. Verificá tu API Key de Groq en ⚙️ Config y tu conexión a internet."});
     }
     setLoading(false);
   };

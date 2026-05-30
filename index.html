@@ -3,154 +3,174 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>ViajeFácil 🚗</title>
 <meta name="theme-color" content="#2b6cb0"/>
-<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="ViajeFácil"/>
 <link rel="manifest" href="manifest.json"/>
 <link rel="apple-touch-icon" href="icon-192.png"/>
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png"/>
-<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png"/>
-<title>ViajeFácil 🚗</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #f7fafc; font-family: system-ui, -apple-system, sans-serif; overflow-x: hidden; }
-input:focus { outline: 2px solid #4299e1; }
-.leaflet-container { font-family: system-ui !important; }
-@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.7;transform:scale(1.3)} }
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f0f4f8;font-family:system-ui,-apple-system,sans-serif;overflow-x:hidden}
+input:focus{outline:2px solid #4299e1}
+.leaflet-container{font-family:system-ui!important}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.4)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const {useState,useEffect,useRef} = React;
+
+// ── TIPOS DE PARADA ────────────────────────────────────────
+const TIPOS = {
+  origen:    {icon:"A",  color:"#38a169", label:"Origen",    emoji:"📍"},
+  destino:   {icon:"B",  color:"#e53e3e", label:"Destino",   emoji:"🏁"},
+  comida:    {icon:"🍽", color:"#ed8936", label:"Comer",     emoji:"🍽️"},
+  descanso:  {icon:"☕", color:"#3182ce", label:"Descanso",  emoji:"☕"},
+  mirador:   {icon:"🏔", color:"#805ad5", label:"Mirador",   emoji:"🏔️"},
+  turistico: {icon:"★",  color:"#0bc5ea", label:"Turístico", emoji:"⭐"},
+  dormir:    {icon:"🌙", color:"#2d3748", label:"Dormir",    emoji:"🏕️"},
+};
 
 const CATS = {
-  nafta:       { icon:"⛽", label:"Nafta",       color:"#e53e3e" },
-  comida:      { icon:"🍔", label:"Comida",      color:"#ed8936" },
-  hospedaje:   { icon:"🏨", label:"Hospedaje",   color:"#3182ce" },
-  actividades: { icon:"🎡", label:"Actividades", color:"#38a169" },
-  otro:        { icon:"📦", label:"Otro",        color:"#718096" },
+  nafta:{icon:"⛽",label:"Nafta",color:"#e53e3e"},
+  comida:{icon:"🍔",label:"Comida",color:"#ed8936"},
+  hospedaje:{icon:"🏨",label:"Hospedaje",color:"#3182ce"},
+  actividades:{icon:"🎡",label:"Actividades",color:"#38a169"},
+  otro:{icon:"📦",label:"Otro",color:"#718096"},
 };
+
 const TABS = [
-  { id:"inicio",     icon:"🏠", label:"Inicio",  color:"#2b6cb0" },
-  { id:"itinerario", icon:"📅", label:"Plan",    color:"#38a169" },
-  { id:"mapa",       icon:"🗺️", label:"Mapa",    color:"#e53e3e" },
-  { id:"gastos",     icon:"💰", label:"Gastos",  color:"#d69e2e" },
-  { id:"config",     icon:"⚙️", label:"Config",  color:"#4a5568" },
+  {id:"inicio",  icon:"🏠",label:"Inicio",  color:"#2b6cb0"},
+  {id:"opciones",icon:"🗂️",label:"Opciones",color:"#38a169"},
+  {id:"mapa",    icon:"🗺️",label:"Mapa",    color:"#e53e3e"},
+  {id:"gastos",  icon:"💰",label:"Gastos",  color:"#d69e2e"},
+  {id:"config",  icon:"⚙️",label:"Config",  color:"#4a5568"},
 ];
 
 const fmtM  = n => "$"+(Math.round(n)||0).toLocaleString("es-AR");
-const fmtDt = str => { try{ return new Date(str).toLocaleString("es-AR",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }catch{ return "—"; } };
+const fmtDt = s => { try{ return new Date(s).toLocaleString("es-AR",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }catch{ return "—";} };
 
-async function geocode(q) {
+// Calcular días entre dos fechas
+function calcDias(f1, f2) {
+  const d1=new Date(f1), d2=new Date(f2);
+  return Math.max(1, Math.round((d2-d1)/(1000*60*60*24))+1);
+}
+
+// Ruta real por OSRM
+async function getOSRM(pts) {
+  if(pts.length<2) return null;
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&accept-language=es`,
-      { headers:{"User-Agent":"ViajeFacil/1.0"} });
+    const coords = pts.map(p=>`${p.lng},${p.lat}`).join(";");
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
     const d = await r.json();
-    if(d.length) return { lat:parseFloat(d[0].lat), lng:parseFloat(d[0].lon) };
+    if(d.code==="Ok") return d.routes[0].geometry.coordinates.map(([lng,lat])=>[lat,lng]);
   } catch(e){}
   return null;
 }
 
-function buildDays(fR, fD) {
-  const days=[]; let cur=new Date(fR); cur.setHours(0,0,0,0);
-  const end=new Date(fD); end.setHours(23,59,59,0); let idx=1;
-  while(cur<=end){
-    days.push({ idx, fecha:cur.toISOString().split("T")[0],
-      label:cur.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}),
-      lugares:[], hospedaje:null });
-    cur.setDate(cur.getDate()+1); idx++;
-  }
-  return days;
-}
-
+// ── ESTILOS ────────────────────────────────────────────────
 const S = {
-  app:  { maxWidth:430, margin:"0 auto", minHeight:"100vh", background:"#f7fafc", position:"relative", paddingBottom:72 },
-  hdr:  c => ({ background:c, padding:"16px 20px 14px", color:"white" }),
-  card: { background:"white", borderRadius:14, padding:16, marginBottom:12, boxShadow:"0 1px 6px rgba(0,0,0,0.08)" },
-  btn:  (c,l) => ({ background:l?`${c}18`:c, color:l?c:"white", border:l?`1.5px solid ${c}`:"none", borderRadius:10, padding:"11px 16px", fontWeight:"bold", fontSize:14, cursor:"pointer", width:"100%", marginTop:8, display:"block" }),
-  inp:  { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:10, padding:"10px 13px", fontSize:14, background:"white", marginBottom:4 },
-  lbl:  { fontSize:12, color:"#718096", marginBottom:5, display:"block", marginTop:12 },
-  ovr:  { position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:1000, display:"flex", alignItems:"flex-end", justifyContent:"center" },
-  sht:  { background:"white", borderRadius:"18px 18px 0 0", padding:"20px 20px 36px", width:"100%", maxWidth:430, maxHeight:"90vh", overflowY:"auto" },
-  nav:  { position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:430, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:500 },
-  nvb:  (a,c) => ({ flex:1, padding:"10px 0 8px", background:"none", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:2, color:a?c:"#a0aec0" }),
-  bdg:  c => ({ background:`${c}18`, color:c, borderRadius:20, padding:"3px 9px", fontSize:12, fontWeight:"bold", display:"inline-block" }),
-  row:  { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #f4f4f4" },
+  app:  {maxWidth:430,margin:"0 auto",minHeight:"100vh",background:"#f0f4f8",position:"relative",paddingBottom:72},
+  hdr:  c => ({background:c,padding:"16px 20px 14px",color:"white"}),
+  card: {background:"white",borderRadius:14,padding:16,marginBottom:12,boxShadow:"0 1px 6px rgba(0,0,0,0.08)"},
+  btn:  (c,l) => ({background:l?`${c}18`:c,color:l?c:"white",border:l?`1.5px solid ${c}`:"none",borderRadius:10,padding:"11px 16px",fontWeight:"bold",fontSize:14,cursor:"pointer",width:"100%",marginTop:8,display:"block"}),
+  inp:  {width:"100%",border:"1.5px solid #e2e8f0",borderRadius:10,padding:"10px 13px",fontSize:14,background:"white",marginBottom:4},
+  lbl:  {fontSize:12,color:"#718096",marginBottom:5,display:"block",marginTop:12},
+  ovr:  {position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"},
+  sht:  {background:"white",borderRadius:"18px 18px 0 0",padding:"20px 20px 36px",width:"100%",maxWidth:430,maxHeight:"90vh",overflowY:"auto"},
+  nav:  {position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:500},
+  nvb:  (a,c) => ({flex:1,padding:"10px 0 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:a?c:"#a0aec0"}),
+  bdg:  c => ({background:`${c}18`,color:c,borderRadius:20,padding:"3px 9px",fontSize:12,fontWeight:"bold",display:"inline-block"}),
+  row:  {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f4f4f4"},
 };
 
 // ── MAPA LEAFLET ───────────────────────────────────────────
-let _map=null, _mlayer=null, _gpsM=null;
+let _map=null, _mlayer=null, _rlayer=null, _gpsM=null;
 
-function MapaLeaflet({ puntos, posGPS, cargando }) {
+function MapaLeaflet({paradas, posGPS, loadingRuta}) {
   const ref = useRef(null);
 
-  useEffect(() => {
-    if(!ref.current || _map) return;
-    _map = L.map(ref.current,{zoomControl:true}).setView([-26.8,-65.2],7);
+  useEffect(()=>{
+    if(!ref.current||_map) return;
+    _map = L.map(ref.current,{zoomControl:true}).setView([-27,-65],6);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
       {attribution:"© OpenStreetMap",maxZoom:19}).addTo(_map);
-    return () => {};
   },[]);
 
-  useEffect(() => {
-    setTimeout(()=>{ if(_map) _map.invalidateSize(); },150);
-  },[]);
+  useEffect(()=>{ setTimeout(()=>{ if(_map) _map.invalidateSize(); },200); },[]);
 
-  useEffect(() => {
+  useEffect(()=>{
     if(!_map) return;
-    if(_mlayer){ _map.removeLayer(_mlayer); _mlayer=null; }
-    if(!puntos||!puntos.length) return;
+    if(_mlayer){_map.removeLayer(_mlayer);_mlayer=null;}
+    if(_rlayer){_map.removeLayer(_rlayer);_rlayer=null;}
+    if(!paradas||!paradas.length) return;
+
     _mlayer = L.layerGroup().addTo(_map);
     const bounds=[];
-    const colores={origen:"#38a169",destino:"#e53e3e",turistico:"#3182ce",hospedaje:"#d69e2e"};
 
-    puntos.forEach((p,i) => {
+    // Marcadores
+    paradas.forEach(p=>{
       if(!p.lat||!p.lng) return;
-      const c=colores[p.tipo]||"#718096";
-      const lbl=p.tipo==="origen"?"A":p.tipo==="destino"?"B":p.tipo==="hospedaje"?"🏕":(p.num||i);
-      const ico=L.divIcon({
-        html:`<div style="background:${c};color:white;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;box-shadow:0 3px 8px rgba(0,0,0,0.35);border:2px solid white;">${lbl}</div>`,
-        className:"",iconSize:[34,34],iconAnchor:[17,17],popupAnchor:[0,-18]
+      const t = TIPOS[p.tipo]||TIPOS.turistico;
+      const ico = L.divIcon({
+        html:`<div style="background:${t.color};color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:bold;box-shadow:0 3px 10px rgba(0,0,0,0.4);border:2px solid white;">${t.icon}</div>`,
+        className:"",iconSize:[36,36],iconAnchor:[18,18],popupAnchor:[0,-20]
       });
       L.marker([p.lat,p.lng],{icon:ico})
-        .bindPopup(`<div style="min-width:160px"><strong>${p.nombre}</strong>${p.descripcion?`<br/><small style="color:#555">${p.descripcion}</small>`:""}</div>`)
+        .bindPopup(`
+          <div style="min-width:200px;font-family:system-ui">
+            <div style="background:${t.color};color:white;padding:8px 10px;margin:-13px -19px 10px;border-radius:4px 4px 0 0;font-weight:bold">${t.emoji} ${p.nombre}</div>
+            <div style="font-size:12px;color:#555;margin-bottom:4px">${t.label}${p.horaLlegada?" · 🕐 "+p.horaLlegada:""}</div>
+            ${p.descripcion?`<div style="font-size:13px;color:#333">${p.descripcion}</div>`:""}
+            ${p.duracion?`<div style="font-size:12px;color:#888;margin-top:4px">⏱ ${p.duracion}</div>`:""}
+          </div>`)
         .addTo(_mlayer);
       bounds.push([p.lat,p.lng]);
     });
 
-    // Línea de recorrido
-    if(bounds.length>=2){
-      L.polyline(bounds,{color:"#2b6cb0",weight:4,opacity:.65,dashArray:"8,4"}).addTo(_mlayer);
+    // Ruta por OSRM
+    const pts = paradas.filter(p=>p.lat&&p.lng);
+    if(pts.length>=2){
+      getOSRM(pts).then(ruta=>{
+        if(!_map) return;
+        if(_rlayer){_map.removeLayer(_rlayer);_rlayer=null;}
+        if(ruta){
+          _rlayer = L.polyline(ruta,{color:"#2b6cb0",weight:5,opacity:.75}).addTo(_map);
+        } else {
+          _rlayer = L.polyline(pts.map(p=>[p.lat,p.lng]),{color:"#2b6cb0",weight:4,opacity:.5,dashArray:"10,6"}).addTo(_map);
+        }
+      });
     }
-    if(bounds.length) _map.fitBounds(bounds,{padding:[50,50],maxZoom:13});
-  },[puntos]);
+    if(bounds.length) _map.fitBounds(bounds,{padding:[50,50],maxZoom:12});
+  },[paradas]);
 
-  useEffect(() => {
+  useEffect(()=>{
     if(!_map) return;
-    if(_gpsM){ _map.removeLayer(_gpsM); _gpsM=null; }
+    if(_gpsM){_map.removeLayer(_gpsM);_gpsM=null;}
     if(!posGPS) return;
     const ico=L.divIcon({
-      html:`<div style="background:#805ad5;border:3px solid white;border-radius:50%;width:20px;height:20px;box-shadow:0 2px 8px rgba(128,90,213,.6);animation:pulse 2s infinite"></div>`,
-      className:"",iconSize:[20,20],iconAnchor:[10,10]
+      html:`<div style="background:#805ad5;border:3px solid white;border-radius:50%;width:22px;height:22px;box-shadow:0 2px 8px rgba(128,90,213,.7);animation:pulse 2s infinite"></div>`,
+      className:"",iconSize:[22,22],iconAnchor:[11,11]
     });
     _gpsM=L.marker([posGPS.lat,posGPS.lng],{icon:ico}).bindPopup("📍 Tu posición actual").addTo(_map);
   },[posGPS]);
 
-  return (
+  return(
     <div style={{position:"relative",height:"100%"}}>
-      {cargando && (
-        <div style={{position:"absolute",inset:0,background:"rgba(255,255,255,.88)",zIndex:999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-          <div style={{fontSize:40}}>🗺️</div>
-          <div style={{color:"#4a5568",marginTop:12,fontSize:15,fontWeight:"bold"}}>Cargando mapa...</div>
-          <div style={{color:"#a0aec0",fontSize:12,marginTop:4}}>Geocodificando lugares</div>
+      {loadingRuta&&(
+        <div style={{position:"absolute",inset:0,background:"rgba(255,255,255,.9)",zIndex:999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+          <div style={{fontSize:40,animation:"spin 1s linear infinite"}}>🗺️</div>
+          <div style={{color:"#4a5568",marginTop:14,fontSize:15,fontWeight:"bold"}}>Trazando la ruta real...</div>
+          <div style={{color:"#a0aec0",fontSize:13,marginTop:6}}>Siguiendo las rutas argentinas</div>
         </div>
       )}
       <div ref={ref} style={{width:"100%",height:"100%"}}/>
@@ -164,22 +184,20 @@ function ModalViaje({fV,setFV,onCrear,onCerrar}){
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
         <div style={{fontWeight:"bold",fontSize:19,color:"#2d3748"}}>🚗 Nuevo Viaje</div>
-        <div style={{fontSize:13,color:"#718096",marginBottom:4}}>Completá los datos</div>
-        <label style={S.lbl}>📍 Desde (origen) *</label>
+        <div style={{fontSize:13,color:"#718096",marginBottom:8}}>La IA planificará 3 opciones según tu ruta y tiempo</div>
+        <label style={S.lbl}>📍 Ciudad de origen *</label>
         <input style={S.inp} placeholder="Ej: Tucumán" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
-        <label style={S.lbl}>🏁 Hasta (destino) *</label>
-        <input style={S.inp} placeholder="Ej: Tafí del Valle" value={fV.destino} onChange={e=>setFV(p=>({...p,destino:e.target.value}))}/>
+        <label style={S.lbl}>🏁 Ciudad de destino *</label>
+        <input style={S.inp} placeholder="Ej: Cafayate, Salta" value={fV.destino} onChange={e=>setFV(p=>({...p,destino:e.target.value}))}/>
         <label style={S.lbl}>🚗 Auto (opcional)</label>
         <input style={S.inp} placeholder="Ej: VW Polo blanco" value={fV.auto} onChange={e=>setFV(p=>({...p,auto:e.target.value}))}/>
-        <label style={S.lbl}>🔢 KM al retiro (opcional)</label>
-        <input style={S.inp} type="number" placeholder="Ej: 48320" value={fV.km} onChange={e=>setFV(p=>({...p,km:e.target.value}))}/>
-        <label style={S.lbl}>📅 Fecha/hora de retiro del auto *</label>
+        <label style={S.lbl}>📅 Fecha y hora de retiro del auto *</label>
         <input style={S.inp} type="datetime-local" value={fV.fRetiro} onChange={e=>setFV(p=>({...p,fRetiro:e.target.value}))}/>
-        <label style={S.lbl}>📅 Fecha/hora de devolución *</label>
+        <label style={S.lbl}>📅 Fecha y hora de devolución *</label>
         <input style={S.inp} type="datetime-local" value={fV.fDevol} onChange={e=>setFV(p=>({...p,fDevol:e.target.value}))}/>
         <label style={S.lbl}>👨‍👩‍👧 Cantidad de personas</label>
         <input style={S.inp} type="number" min="1" value={fV.pers} onChange={e=>setFV(p=>({...p,pers:e.target.value}))}/>
-        <button style={S.btn("#2b6cb0")} onClick={onCrear}>✅ Crear Viaje</button>
+        <button style={S.btn("#2b6cb0")} onClick={onCrear}>✅ Crear y buscar opciones</button>
         <button style={S.btn("#718096",true)} onClick={onCerrar}>Cancelar</button>
       </div>
     </div>
@@ -209,92 +227,18 @@ function ModalGasto({fG,setFG,onAgregar,onCerrar}){
   );
 }
 
-function ModalNafta({fN,setFN,litros,costoN,onAgregarComoGasto,onCerrar}){
-  return(
-    <div style={S.ovr} onClick={onCerrar}>
-      <div style={S.sht} onClick={e=>e.stopPropagation()}>
-        <div style={{fontWeight:"bold",fontSize:19,color:"#2d3748"}}>⛽ Calculadora de Nafta</div>
-        <div style={{fontSize:13,color:"#718096",marginBottom:8}}>Estimá el costo de combustible</div>
-        <label style={{...S.lbl,marginTop:4}}>Kilómetros a recorrer</label>
-        <input style={S.inp} type="number" placeholder="Ej: 250" value={fN.km} onChange={e=>setFN(p=>({...p,km:e.target.value}))}/>
-        <label style={S.lbl}>Rendimiento (km por litro)</label>
-        <input style={S.inp} type="number" placeholder="Ej: 12" value={fN.rend} onChange={e=>setFN(p=>({...p,rend:e.target.value}))}/>
-        <label style={S.lbl}>Precio del litro ($)</label>
-        <input style={S.inp} type="number" placeholder="Ej: 1200" value={fN.precio} onChange={e=>setFN(p=>({...p,precio:e.target.value}))}/>
-        {litros>0 && (
-          <div style={{background:"#ebf8ff",borderRadius:12,padding:18,marginTop:16,textAlign:"center"}}>
-            <div style={{fontSize:12,color:"#718096"}}>Litros necesarios</div>
-            <div style={{fontSize:34,fontWeight:"bold",color:"#2b6cb0"}}>{litros} L</div>
-            {costoN>0 && <><div style={{fontSize:12,color:"#718096",marginTop:10}}>Costo estimado</div><div style={{fontSize:28,fontWeight:"bold",color:"#e53e3e"}}>{fmtM(costoN)}</div></>}
-          </div>
-        )}
-        {costoN>0 && <button style={S.btn("#d69e2e")} onClick={onAgregarComoGasto}>+ Agregar como gasto de nafta</button>}
-        <button style={S.btn("#718096",true)} onClick={onCerrar}>Cerrar</button>
-      </div>
-    </div>
-  );
-}
-
-function ModalDia({reco,diaIdx,itinerario,setItinerario,onCerrar}){
-  const dia=itinerario[diaIdx];
-  const togLugar=l=>setItinerario(prev=>prev.map((d,i)=>{
-    if(i!==diaIdx) return d;
-    const ex=d.lugares.find(x=>x.nombre===l.nombre);
-    return {...d,lugares:ex?d.lugares.filter(x=>x.nombre!==l.nombre):[...d.lugares,l]};
-  }));
-  const setHostal=h=>setItinerario(prev=>prev.map((d,i)=>{
-    if(i!==diaIdx) return d;
-    return {...d,hospedaje:d.hospedaje?.nombre===h.nombre?null:h};
-  }));
-  return(
-    <div style={S.ovr} onClick={onCerrar}>
-      <div style={S.sht} onClick={e=>e.stopPropagation()}>
-        <div style={{fontWeight:"bold",fontSize:17,color:"#2d3748",marginBottom:2}}>📅 Día {dia?.idx}</div>
-        <div style={{fontSize:13,color:"#718096",marginBottom:14,textTransform:"capitalize"}}>{dia?.label}</div>
-        <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:8,fontSize:14}}>📸 Lugares a visitar</div>
-        {(reco?.lugares||[]).map((l,i)=>{
-          const sel=dia?.lugares.find(x=>x.nombre===l.nombre);
-          return(
-            <div key={i} onClick={()=>togLugar(l)} style={{border:`2px solid ${sel?"#3182ce":"#e2e8f0"}`,borderRadius:10,padding:12,marginBottom:8,cursor:"pointer",background:sel?"#ebf8ff":"white"}}>
-              <div style={{fontWeight:"bold",color:sel?"#2b6cb0":"#2d3748",fontSize:13}}>{sel?"✅ ":""}{l.nombre}</div>
-              <div style={{fontSize:12,color:"#718096",marginTop:3}}>{l.descripcion}</div>
-              <div style={{fontSize:11,color:"#a0aec0",marginTop:2}}>🕐 {l.tiempo}</div>
-            </div>
-          );
-        })}
-        <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:8,fontSize:14,marginTop:14}}>🏕️ Hospedaje esta noche</div>
-        {(reco?.hospedajes||[]).map((h,i)=>{
-          const sel=dia?.hospedaje?.nombre===h.nombre;
-          return(
-            <div key={i} onClick={()=>setHostal(h)} style={{border:`2px solid ${sel?"#d69e2e":"#e2e8f0"}`,borderRadius:10,padding:12,marginBottom:8,cursor:"pointer",background:sel?"#fffbeb":"white"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{fontWeight:"bold",color:sel?"#b7791f":"#2d3748",fontSize:13}}>
-                  {sel?"✅ ":""}{h.tipo==="camping"?"🏕️":h.tipo==="hostel"?"🛏️":"🏠"} {h.nombre}
-                </div>
-                <span style={S.bdg(h.precio==="bajo"?"#38a169":"#d69e2e")}>{h.precio==="bajo"?"💚 Económico":"💛 Medio"}</span>
-              </div>
-              <div style={{fontSize:12,color:"#718096",marginTop:4}}>{h.descripcion}</div>
-            </div>
-          );
-        })}
-        <button style={S.btn("#38a169")} onClick={onCerrar}>✅ Listo</button>
-      </div>
-    </div>
-  );
-}
-
 // ── PANTALLAS ──────────────────────────────────────────────
 function PantallaConfig({apiKey,setApiKey}){
   const [tmp,setTmp]=useState(apiKey);
   const [ok,setOk]=useState(false);
-  const guardar=()=>{ setApiKey(tmp.trim()); setOk(true); setTimeout(()=>setOk(false),2500); };
+  const guardar=()=>{setApiKey(tmp.trim());setOk(true);setTimeout(()=>setOk(false),2500);};
   return(
     <div>
       <div style={S.hdr("#4a5568")}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Configuración</div><div style={{fontSize:13,opacity:.8}}>API Key de Groq (gratis)</div></div>
       <div style={{padding:16}}>
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:8}}>🤖 Tu API Key de Groq</div>
-          <div style={{fontSize:13,color:"#718096",marginBottom:12,lineHeight:1.6}}>Necesitás esta clave para la IA. Es <strong>100% gratis</strong>.<br/>📌 Conseguila en: <strong>console.groq.com</strong></div>
+          <div style={{fontSize:13,color:"#718096",marginBottom:12,lineHeight:1.6}}>Necesitás esta clave para que la IA planifique tu viaje. Es <strong>100% gratis</strong>.<br/>📌 Conseguila en: <strong>console.groq.com</strong></div>
           <label style={{...S.lbl,marginTop:0}}>Tu clave (gsk_...)</label>
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar"}</button>
@@ -304,10 +248,9 @@ function PantallaConfig({apiKey,setApiKey}){
         </div>
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:8}}>📖 Cómo obtenerla (gratis)</div>
-          {[["1️⃣","Entrá a console.groq.com"],["2️⃣","Creá una cuenta (podés usar Google)"],["3️⃣","Andá a 'API Keys' en el menú"],["4️⃣","Click en 'Create API Key'"],["5️⃣","Copiá la clave y pegala arriba"]].map(([n,t])=>(
+          {[["1️⃣","Entrá a console.groq.com"],["2️⃣","Creá una cuenta (podés usar Google)"],["3️⃣","Andá a 'API Keys'"],["4️⃣","Click en 'Create API Key'"],["5️⃣","Copiá y pegá arriba"]].map(([n,t])=>(
             <div key={n} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f4f4f4",alignItems:"center"}}>
-              <span style={{fontSize:16,minWidth:28}}>{n}</span>
-              <span style={{fontSize:13,color:"#4a5568"}}>{t}</span>
+              <span style={{fontSize:16,minWidth:28}}>{n}</span><span style={{fontSize:13,color:"#4a5568"}}>{t}</span>
             </div>
           ))}
         </div>
@@ -316,33 +259,34 @@ function PantallaConfig({apiKey,setApiKey}){
   );
 }
 
-function PantallaInicio({viaje,estado,reco,loading,apiKey,tRest,pct,alerta,onNuevo,onIA,onIniciar,setModal}){
+function PantallaInicio({viaje,estado,opciones,loadingIA,apiKey,tRest,pct,alerta,opcionSel,onNuevo,onIniciar,setTab}){
   return(
     <div>
-      <div style={S.hdr("#2b6cb0")}><div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div><div style={{fontSize:13,opacity:.8}}>Tu compañero de viaje</div></div>
+      <div style={S.hdr("#2b6cb0")}><div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div><div style={{fontSize:13,opacity:.8}}>Tu compañero de viaje inteligente</div></div>
       <div style={{padding:16}}>
-        {!viaje ? (
+        {!viaje?(
           <div style={{...S.card,textAlign:"center",padding:44}}>
             <div style={{fontSize:56}}>🗺️</div>
             <div style={{fontSize:19,fontWeight:"bold",color:"#2d3748",marginTop:14}}>¡Planificá tu viaje!</div>
-            <div style={{color:"#718096",fontSize:14,margin:"8px 0 4px"}}>Organizá todo tu viaje con auto alquilado</div>
-            <button style={S.btn("#2b6cb0")} onClick={onNuevo}>+ Crear nuevo viaje</button>
+            <div style={{color:"#718096",fontSize:14,margin:"8px 0 12px"}}>La IA analizará tu ruta y te dará 3 opciones completas con paradas recomendadas</div>
+            {!apiKey&&<div style={{background:"#fffbeb",border:"1px solid #f6e05e",borderRadius:10,padding:10,marginBottom:8,fontSize:13,color:"#744210"}}>⚠️ Primero configurá tu API Key en ⚙️ Config</div>}
+            <button style={S.btn(apiKey?"#2b6cb0":"#a0aec0")} onClick={apiKey?onNuevo:()=>setTab("config")}>{apiKey?"+ Planificar viaje":"⚙️ Configurar API Key"}</button>
           </div>
-        ) : (
+        ):(
           <>
             <div style={{...S.card,background:"linear-gradient(135deg,#2b6cb0,#4299e1)",color:"white"}}>
-              <div style={{fontSize:12,opacity:.8}}>{estado==="viajando"?"🚦 EN VIAJE":"✈️ Próximo viaje"}</div>
+              <div style={{fontSize:12,opacity:.8}}>{estado==="viajando"?"🚦 EN VIAJE":"✈️ Viaje planificado"}</div>
               <div style={{fontSize:20,fontWeight:"bold",marginTop:4}}>📍 {viaje.origen} → {viaje.destino}</div>
               {viaje.auto&&<div style={{fontSize:13,opacity:.8,marginTop:3}}>🚗 {viaje.auto}</div>}
               <div style={{fontSize:12,opacity:.7,marginTop:2}}>👨‍👩‍👧 {viaje.pers} personas · Devolver: {fmtDt(viaje.fDevol)}</div>
             </div>
 
-            {estado==="viajando" && (
+            {estado==="viajando"&&(
               <>
                 {alerta&&<div style={{background:"#fed7d7",border:"2px solid #e53e3e",borderRadius:12,padding:14,marginBottom:12,textAlign:"center"}}><div style={{fontWeight:"bold",color:"#c53030"}}>⚠️ ¡Menos de 3 horas para devolver!</div></div>}
                 <div style={{...S.card,textAlign:"center"}}>
                   <div style={{fontSize:12,color:"#718096"}}>⏱ Tiempo restante para devolver el auto</div>
-                  <div style={{fontSize:40,fontWeight:"bold",color:pct>80?"#e53e3e":"#2b6cb0",margin:"8px 0"}}>{tRest||"Calculando..."}</div>
+                  <div style={{fontSize:40,fontWeight:"bold",color:pct>80?"#e53e3e":"#2b6cb0",margin:"8px 0"}}>{tRest||"..."}</div>
                   <div style={{background:"#e2e8f0",borderRadius:8,height:10,overflow:"hidden",marginTop:8}}>
                     <div style={{background:pct>80?"#e53e3e":"#2b6cb0",height:"100%",width:`${pct}%`,borderRadius:8,transition:"width .5s"}}/>
                   </div>
@@ -351,34 +295,32 @@ function PantallaInicio({viaje,estado,reco,loading,apiKey,tRest,pct,alerta,onNue
               </>
             )}
 
-            {estado==="listo" && (
+            {loadingIA&&(
+              <div style={{...S.card,textAlign:"center",padding:32}}>
+                <div style={{fontSize:44,animation:"spin 1s linear infinite"}}>🤖</div>
+                <div style={{fontWeight:"bold",color:"#2d3748",marginTop:12}}>La IA está planificando tu viaje...</div>
+                <div style={{fontSize:13,color:"#718096",marginTop:6}}>Analizando ruta, tiempo y lugares de interés</div>
+                <div style={{fontSize:12,color:"#a0aec0",marginTop:4}}>Generando 3 opciones personalizadas</div>
+              </div>
+            )}
+
+            {opciones&&opciones.length>0&&estado!=="viajando"&&(
+              <div style={{...S.card,background:"#f0fff4",border:"1px solid #9ae6b4"}}>
+                <div style={{fontWeight:"bold",color:"#276749",marginBottom:4}}>✅ ¡3 opciones listas!</div>
+                <div style={{fontSize:13,color:"#4a5568"}}>Andá a 🗂️ Opciones para elegir tu itinerario favorito</div>
+                {opcionSel&&<div style={{fontSize:13,color:"#2b6cb0",marginTop:4}}>📌 Opción seleccionada: <strong>{opcionSel.nombre}</strong></div>}
+              </div>
+            )}
+
+            {opcionSel&&estado==="listo"&&(
               <div style={{...S.card,textAlign:"center",background:"#f0fff4",border:"2px solid #38a169"}}>
                 <div style={{fontSize:36}}>🚦</div>
                 <div style={{fontWeight:"bold",color:"#276749",fontSize:16,marginTop:8}}>¡Todo listo para partir!</div>
-                <div style={{fontSize:13,color:"#718096",margin:"6px 0 4px"}}>Cuando retirés el auto, tocá este botón. Ahí empieza a correr el tiempo.</div>
+                <div style={{fontSize:13,color:"#718096",margin:"6px 0 4px"}}>Cuando retirés el auto, tocá este botón. Recién ahí empieza el contador.</div>
                 <button style={S.btn("#38a169")} onClick={onIniciar}>🚗 Iniciar Viaje</button>
               </div>
             )}
 
-            {!reco && !loading && estado!=="viajando" && (
-              <div style={{...S.card,textAlign:"center",padding:24}}>
-                <div style={{fontSize:40}}>🤖</div>
-                <div style={{fontWeight:"bold",color:"#2d3748",marginTop:10}}>Buscar rutas y lugares con IA</div>
-                <div style={{fontSize:13,color:"#718096",margin:"6px 0 4px"}}>{!apiKey?"⚠️ Primero configurá tu API Key en ⚙️ Config":"La IA sugerirá rutas, lugares y hospedajes"}</div>
-                <button style={S.btn(apiKey?"#38a169":"#a0aec0")} onClick={apiKey?onIA:undefined} disabled={!apiKey}>
-                  🔍 {apiKey?"Buscar ahora":"Configurá la API Key primero"}
-                </button>
-              </div>
-            )}
-            {loading&&<div style={{...S.card,textAlign:"center",padding:28}}><div style={{fontSize:40}}>🔍</div><div style={{color:"#718096",marginTop:8}}>Buscando con IA...</div></div>}
-            {reco&&!reco.error&&estado!=="viajando"&&(
-              <div style={{...S.card,background:"#f0fff4",border:"1px solid #9ae6b4"}}>
-                <div style={{fontWeight:"bold",color:"#276749",marginBottom:4}}>✅ IA completó la búsqueda</div>
-                <div style={{fontSize:13,color:"#4a5568"}}>{reco.rutas?.length||0} rutas · {reco.lugares?.length||0} lugares · {reco.hospedajes?.length||0} hospedajes</div>
-                <div style={{fontSize:13,color:"#718096",marginTop:4}}>→ Andá a 📅 Plan para armar el itinerario · 🗺️ Mapa para verlo</div>
-              </div>
-            )}
-            {reco?.error&&<div style={{...S.card,background:"#fff5f5",border:"1px solid #feb2b2"}}><div style={{fontWeight:"bold",color:"#c53030"}}>❌ Error</div><div style={{fontSize:13,color:"#4a5568",marginTop:4}}>{reco.error}</div><button style={S.btn("#e53e3e",true)} onClick={onIA}>Reintentar</button></div>}
             <button style={S.btn("#2b6cb0",true)} onClick={onNuevo}>+ Nuevo Viaje</button>
           </>
         )}
@@ -387,92 +329,131 @@ function PantallaInicio({viaje,estado,reco,loading,apiKey,tRest,pct,alerta,onNue
   );
 }
 
-function PantallaItinerario({viaje,reco,itinerario,setItinerario}){
-  const [modalDia,setModalDia]=useState(null);
+function PantallaOpciones({opciones,opcionSel,setOpcionSel,loadingIA,viaje,setTab}){
   if(!viaje) return(
-    <div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>📅 Plan del Viaje</div></div>
-    <div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>📅</div><div style={{color:"#718096",marginTop:8}}>Creá un viaje primero en 🏠 Inicio</div></div></div></div>
+    <div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones de Viaje</div></div>
+    <div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"#718096",marginTop:8}}>Creá un viaje primero en 🏠 Inicio</div></div></div></div>
   );
-  if(!reco||reco.error) return(
-    <div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>📅 Plan del Viaje</div><div style={{fontSize:13,opacity:.8}}>{viaje.origen} → {viaje.destino}</div></div>
-    <div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44}}>🤖</div><div style={{fontWeight:"bold",color:"#2d3748",marginTop:10}}>Primero buscá con IA</div><div style={{fontSize:13,color:"#718096",marginTop:6}}>Andá a 🏠 Inicio y tocá "Buscar con IA"</div></div></div></div>
+  if(loadingIA) return(
+    <div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones de Viaje</div></div>
+    <div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44,animation:"spin 1s linear infinite"}}>🤖</div><div style={{fontWeight:"bold",color:"#2d3748",marginTop:12}}>Generando opciones...</div></div></div></div>
   );
+  if(!opciones||!opciones.length) return(
+    <div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones de Viaje</div></div>
+    <div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44}}>🤖</div><div style={{fontWeight:"bold",color:"#2d3748",marginTop:10}}>Aún no hay opciones</div><div style={{fontSize:13,color:"#718096",marginTop:6}}>Andá a 🏠 Inicio y creá un viaje</div></div></div></div>
+  );
+
+  const seleccionar=(op)=>{
+    setOpcionSel(op);
+    setTab("mapa");
+  };
+
   return(
     <div>
-      <div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>📅 Plan del Viaje</div><div style={{fontSize:13,opacity:.8}}>{viaje.origen} → {viaje.destino}</div></div>
+      <div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones de Viaje</div><div style={{fontSize:13,opacity:.8}}>{viaje.origen} → {viaje.destino}</div></div>
       <div style={{padding:16}}>
-        <div style={{...S.card,background:"#ebf8ff",padding:12}}>
-          <div style={{fontSize:13,color:"#2b6cb0"}}>📌 Tocá <strong>Editar</strong> en cada día para asignar lugares y hospedaje</div>
+        <div style={{...S.card,background:"#ebf8ff",padding:12,marginBottom:16}}>
+          <div style={{fontSize:13,color:"#2b6cb0"}}>📌 La IA generó <strong>3 opciones</strong> según tu ruta y tiempo disponible. Elegí la que más te guste.</div>
         </div>
-        {itinerario.map((dia,i)=>(
-          <div key={i} style={S.card}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div>
-                <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14}}>Día {dia.idx}</div>
-                <div style={{fontSize:12,color:"#718096",textTransform:"capitalize"}}>{dia.label}</div>
+
+        {opciones.map((op,oi)=>{
+          const sel=opcionSel?.nombre===op.nombre;
+          const colores=["#2b6cb0","#38a169","#805ad5"];
+          const c=colores[oi]||"#2b6cb0";
+          const totalParadas=op.dias?.reduce((s,d)=>s+(d.paradas?.length||0),0)||0;
+          return(
+            <div key={oi} style={{...S.card,border:`2px solid ${sel?c:"#e2e8f0"}`,background:sel?`${c}08`:"white",marginBottom:16}}>
+              {/* Cabecera opción */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div>
+                  <div style={{fontWeight:"bold",fontSize:16,color:c}}>Opción {oi+1}: {op.nombre}</div>
+                  <div style={{fontSize:13,color:"#4a5568",marginTop:2}}>{op.descripcion}</div>
+                </div>
+                <span style={S.bdg(c)}>{op.totalKm||"?"} km</span>
               </div>
-              <button onClick={()=>setModalDia(i)} style={{background:"#38a169",color:"white",border:"none",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:13,fontWeight:"bold"}}>✏️ Editar</button>
+
+              {/* Días */}
+              {op.dias?.map((dia,di)=>(
+                <div key={di} style={{marginBottom:10}}>
+                  <div style={{fontWeight:"bold",color:"#2d3748",fontSize:13,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{background:c,color:"white",borderRadius:6,padding:"2px 8px",fontSize:11}}>Día {dia.dia}</span>
+                    <span style={{color:"#718096",fontSize:12}}>{dia.titulo}</span>
+                  </div>
+                  {dia.paradas?.map((p,pi)=>{
+                    const t=TIPOS[p.tipo]||TIPOS.turistico;
+                    return(
+                      <div key={pi} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:"1px solid #f4f4f4",alignItems:"flex-start"}}>
+                        <div style={{background:t.color,color:"white",borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0,marginTop:2}}>{t.icon}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:13}}>{p.nombre}</div>
+                          <div style={{fontSize:11,color:"#718096"}}>{t.label}{p.horaLlegada?" · 🕐 "+p.horaLlegada:""}{p.duracion?" · ⏱ "+p.duracion:""}</div>
+                          {p.descripcion&&<div style={{fontSize:12,color:"#4a5568",marginTop:2}}>{p.descripcion}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {/* Info pie */}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                <span style={S.bdg("#718096")}>{op.dias?.length||0} días</span>
+                <span style={S.bdg("#718096")}>{totalParadas} paradas</span>
+              </div>
+
+              <button style={S.btn(c,!sel)} onClick={()=>seleccionar(op)}>
+                {sel?"✅ Seleccionada — Ver en Mapa 🗺️":"Elegir esta opción"}
+              </button>
             </div>
-            {dia.lugares.length===0&&!dia.hospedaje&&<div style={{fontSize:13,color:"#a0aec0",fontStyle:"italic"}}>Sin actividades asignadas</div>}
-            {dia.lugares.map((l,j)=>(
-              <div key={j} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #f4f4f4"}}>
-                <div style={{background:"#3182ce",color:"white",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:"bold",flexShrink:0}}>{j+1}</div>
-                <div><div style={{fontSize:13,color:"#2d3748",fontWeight:"bold"}}>{l.nombre}</div><div style={{fontSize:11,color:"#718096"}}>🕐 {l.tiempo}</div></div>
-              </div>
-            ))}
-            {dia.hospedaje&&(
-              <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px",marginTop:6,background:"#fffbeb",borderRadius:8}}>
-                <span style={{fontSize:18}}>{dia.hospedaje.tipo==="camping"?"🏕️":dia.hospedaje.tipo==="hostel"?"🛏️":"🏠"}</span>
-                <div><div style={{fontSize:13,color:"#2d3748",fontWeight:"bold"}}>{dia.hospedaje.nombre}</div><div style={{fontSize:11,color:"#718096"}}>{dia.hospedaje.tipo} · {dia.hospedaje.precio==="bajo"?"💚 Económico":"💛 Precio medio"}</div></div>
-              </div>
-            )}
-          </div>
-        ))}
-        {reco.rutas&&reco.rutas.length>0&&(
-          <div style={S.card}>
-            <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:10,fontSize:14}}>🛣️ Rutas sugeridas</div>
-            {reco.rutas.map((r,i)=>(
-              <div key={i} style={{border:`2px solid ${i===0?"#38a169":"#e2e8f0"}`,borderRadius:10,padding:10,marginBottom:8,background:i===0?"#f0fff4":"white"}}>
-                <div style={{fontWeight:"bold",color:i===0?"#276749":"#2d3748",fontSize:13}}>{i===0?"✅ ":""}{r.nombre}</div>
-                <div style={{fontSize:12,color:"#718096",marginTop:2}}>📏 {r.km} km · ⏱ {r.tiempo}</div>
-                <div style={{fontSize:12,color:"#4a5568",marginTop:2}}>{r.descripcion}</div>
-              </div>
-            ))}
-          </div>
-        )}
+          );
+        })}
       </div>
-      {modalDia!==null&&<ModalDia reco={reco} diaIdx={modalDia} itinerario={itinerario} setItinerario={setItinerario} onCerrar={()=>setModalDia(null)}/>}
     </div>
   );
 }
 
-function PantallaMapa({viaje,reco,puntos,loading,posGPS,estado,onRecargar}){
-  const hayDatos=puntos&&puntos.length>0;
+function PantallaMapa({viaje,opcionSel,posGPS,estado,loadingRuta}){
+  const paradas = opcionSel?.dias?.flatMap(d=>d.paradas||[])||[];
+
   return(
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 72px)"}}>
       <div style={S.hdr("#e53e3e")}>
         <div style={{fontSize:22,fontWeight:"bold"}}>🗺️ Mapa del Viaje</div>
-        <div style={{fontSize:13,opacity:.8}}>{estado==="viajando"?"📍 Viaje en curso":"Planificación del recorrido"}</div>
+        <div style={{fontSize:13,opacity:.8}}>{opcionSel?opcionSel.nombre:estado==="viajando"?"Viaje en curso":"Seleccioná una opción"}</div>
       </div>
-      <div style={{padding:"10px 16px",background:"white",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-        <button onClick={onRecargar} style={{...S.btn("#e53e3e"),width:"auto",marginTop:0,padding:"8px 14px",fontSize:13}}>🔄 Cargar/Actualizar</button>
-        {estado==="viajando"&&posGPS&&<span style={S.bdg("#805ad5")}>📍 GPS activo</span>}
-        {hayDatos&&<span style={S.bdg("#38a169")}>✅ {puntos.length} puntos</span>}
-      </div>
-      {hayDatos&&(
-        <div style={{padding:"8px 16px",background:"white",borderBottom:"1px solid #e2e8f0",display:"flex",gap:10,flexWrap:"wrap"}}>
-          {[["#38a169","A","Origen"],["#3182ce","★","Turístico"],["#d69e2e","🏕","Hospedaje"],["#e53e3e","B","Destino"],["#805ad5","●","Tu posición"]].map(([c,l,n])=>(
-            <div key={n} style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:"#4a5568"}}>
-              <div style={{background:c,color:"white",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:"bold"}}>{l}</div>
-              {n}
+
+      {/* Leyenda */}
+      {opcionSel&&(
+        <div style={{padding:"8px 12px",background:"white",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {Object.entries(TIPOS).map(([k,t])=>(
+            <div key={k} style={{display:"flex",alignItems:"center",gap:3,fontSize:11,color:"#4a5568"}}>
+              <div style={{background:t.color,color:"white",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9}}>{t.icon}</div>
+              {t.label}
             </div>
           ))}
+          {estado==="viajando"&&posGPS&&(
+            <div style={{display:"flex",alignItems:"center",gap:3,fontSize:11,color:"#805ad5",fontWeight:"bold"}}>
+              <div style={{background:"#805ad5",color:"white",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9}}>●</div>
+              Tu posición
+            </div>
+          )}
         </div>
       )}
+
       <div style={{flex:1,position:"relative"}}>
-        {!viaje&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",color:"#a0aec0"}}><div style={{fontSize:48}}>🗺️</div><div style={{marginTop:10}}>Creá un viaje primero</div></div>}
-        {viaje&&!reco&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",color:"#a0aec0",padding:20,textAlign:"center"}}><div style={{fontSize:48}}>🤖</div><div style={{marginTop:10,fontSize:15,color:"#4a5568"}}>Buscá con IA primero</div><div style={{marginTop:6,fontSize:13}}>Andá a 🏠 Inicio → "Buscar con IA"</div></div>}
-        {viaje&&reco&&!reco.error&&<MapaLeaflet puntos={puntos} posGPS={posGPS} cargando={loading}/>}
+        {!viaje&&(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",color:"#a0aec0",textAlign:"center",padding:20}}>
+            <div style={{fontSize:48}}>🗺️</div>
+            <div style={{marginTop:10,fontSize:15,color:"#4a5568"}}>Creá un viaje primero</div>
+          </div>
+        )}
+        {viaje&&!opcionSel&&(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",color:"#a0aec0",textAlign:"center",padding:20}}>
+            <div style={{fontSize:48}}>🗂️</div>
+            <div style={{marginTop:10,fontSize:15,color:"#4a5568"}}>Seleccioná una opción en 🗂️ Opciones</div>
+          </div>
+        )}
+        {viaje&&opcionSel&&<MapaLeaflet paradas={paradas} posGPS={posGPS} loadingRuta={loadingRuta}/>}
       </div>
     </div>
   );
@@ -499,10 +480,12 @@ function PantallaGastos({gastos,setGastos,pers,setPers,setModal}){
             <span style={{fontWeight:"bold",fontSize:20,minWidth:24,textAlign:"center"}}>{pers}</span>
             <button onClick={()=>setPers(p=>p+1)} style={{width:32,height:32,borderRadius:16,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",fontWeight:"bold",fontSize:18}}>+</button>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid #f4f4f4"}}><span style={{color:"#718096",fontSize:14}}>Por persona:</span><span style={{fontWeight:"bold",color:"#d69e2e",fontSize:22}}>{fmtM(porPers)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid #f4f4f4"}}>
+            <span style={{color:"#718096",fontSize:14}}>Por persona:</span>
+            <span style={{fontWeight:"bold",color:"#d69e2e",fontSize:22}}>{fmtM(porPers)}</span>
+          </div>
         </div>
         <button style={S.btn("#d69e2e")} onClick={()=>setModal("gasto")}>+ Agregar Gasto</button>
-        <button style={S.btn("#d69e2e",true)} onClick={()=>setModal("nafta")}>⛽ Calculadora de Nafta</button>
         {gastos.length>0&&(
           <div style={S.card}>
             <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:8}}>📋 Lista de gastos</div>
@@ -525,37 +508,35 @@ function PantallaGastos({gastos,setGastos,pers,setPers,setModal}){
 
 // ── APP PRINCIPAL ──────────────────────────────────────────
 function App(){
-  const [tab,        setTab]       = useState("inicio");
-  const [apiKey,     setApiKey]    = useState("");
-  const [viaje,      setViaje]     = useState(null);
-  const [estado,     setEstado]    = useState("nuevo");
-  const [reco,       setReco]      = useState(null);
-  const [loadingIA,  setLoadingIA] = useState(false);
-  const [itinerario, setItin]      = useState([]);
-  const [gastos,     setGastos]    = useState([]);
-  const [pers,       setPers]      = useState(2);
-  const [modal,      setModal]     = useState(null);
-  const [posGPS,     setPosGPS]    = useState(null);
-  const [puntos,     setPuntos]    = useState([]);
-  const [loadingM,   setLoadingM]  = useState(false);
-  const [tRest,      setTRest]     = useState("");
-  const [pct,        setPct]       = useState(0);
-  const [inicioR,    setInicioR]   = useState(null);
-  const [fV,setFV]  = useState({origen:"",destino:"",auto:"",km:"",fRetiro:"",fDevol:"",pers:"2"});
-  const [fG,setFG]  = useState({cat:"nafta",desc:"",monto:""});
-  const [fN,setFN]  = useState({km:"",rend:"12",precio:""});
+  const [tab,       setTab]      = useState("inicio");
+  const [apiKey,    setApiKey]   = useState("");
+  const [viaje,     setViaje]    = useState(null);
+  const [estado,    setEstado]   = useState("nuevo");
+  const [opciones,  setOpciones] = useState([]);
+  const [opcionSel, setOpcionSel]= useState(null);
+  const [loadingIA, setLoadingIA]= useState(false);
+  const [loadingM,  setLoadingM] = useState(false);
+  const [gastos,    setGastos]   = useState([]);
+  const [pers,      setPers]     = useState(2);
+  const [modal,     setModal]    = useState(null);
+  const [posGPS,    setPosGPS]   = useState(null);
+  const [tRest,     setTRest]    = useState("");
+  const [pct,       setPct]      = useState(0);
+  const [inicioR,   setInicioR]  = useState(null);
+  const [fV,setFV] = useState({origen:"",destino:"",auto:"",fRetiro:"",fDevol:"",pers:"2"});
+  const [fG,setFG] = useState({cat:"nafta",desc:"",monto:""});
 
-  // Invalidar mapa al cambiar a tab mapa
-  useEffect(()=>{ if(tab==="mapa"&&_map) setTimeout(()=>_map.invalidateSize(),150); },[tab]);
+  // Invalidar mapa al cambiar tab
+  useEffect(()=>{ if(tab==="mapa"&&_map) setTimeout(()=>_map.invalidateSize(),200); },[tab]);
 
-  // Countdown — solo corre cuando viajando
+  // Countdown
   useEffect(()=>{
     if(estado!=="viajando"||!viaje) return;
     const calc=()=>{
-      const now=new Date(), dev=new Date(viaje.fDevol), ini=inicioR||now;
-      const diff=dev-now, total=dev-ini, usado=now-ini;
+      const now=new Date(),dev=new Date(viaje.fDevol),ini=inicioR||now;
+      const diff=dev-now,total=dev-ini,usado=now-ini;
       setPct(Math.min(100,Math.max(0,Math.round((usado/total)*100))));
-      if(diff<=0){ setTRest("¡Tiempo vencido!"); return; }
+      if(diff<=0){setTRest("¡Tiempo vencido!");return;}
       const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000);
       setTRest(`${d}d ${h}h ${m}m`);
     };
@@ -564,69 +545,65 @@ function App(){
     return()=>clearInterval(iv);
   },[estado,viaje,inicioR]);
 
-  const alerta=estado==="viajando"&&viaje&&(()=>{ const d=new Date(viaje.fDevol)-new Date(); return d>0&&d<3*3600000; })();
+  const alerta=estado==="viajando"&&viaje&&(()=>{const d=new Date(viaje.fDevol)-new Date();return d>0&&d<3*3600000;})();
 
   const crearViaje=()=>{
     if(!fV.origen||!fV.destino||!fV.fRetiro||!fV.fDevol) return;
     const v={id:Date.now(),...fV,pers:parseInt(fV.pers)||2};
-    setViaje(v); setItin(buildDays(fV.fRetiro,fV.fDevol));
-    setPers(v.pers); setReco(null); setPuntos([]); setEstado("planificando"); setInicioR(null);
-    setModal(null); setFV({origen:"",destino:"",auto:"",km:"",fRetiro:"",fDevol:"",pers:"2"});
+    setViaje(v); setOpciones([]); setOpcionSel(null); setEstado("planificando");
+    setInicioR(null); setModal(null);
+    setFV({origen:"",destino:"",auto:"",fRetiro:"",fDevol:"",pers:"2"});
     setTab("inicio");
+    // Buscar IA automáticamente
+    setTimeout(()=>buscarIA(v),100);
   };
 
-  const buscarIA=async()=>{
-    if(!viaje||!apiKey) return;
-    setLoadingIA(true); setReco(null);
+  const buscarIA=async(viajeData)=>{
+    const v=viajeData||viaje;
+    if(!v||!apiKey) return;
+    setLoadingIA(true); setOpciones([]);
+    const dias=calcDias(v.fRetiro,v.fDevol);
+    const retiro=fmtDt(v.fRetiro);
+    const devol=fmtDt(v.fDevol);
     try{
       const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},
         body:JSON.stringify({
-          model:"llama-3.3-70b-versatile", max_tokens:1200,
+          model:"llama-3.3-70b-versatile",
+          max_tokens:3000,
           messages:[
-            {role:"system",content:"Sos un asistente de viajes argentino. Respondé siempre en español con JSON válido."},
-            {role:"user",content:`Viajo desde ${viaje.origen} hasta ${viaje.destino} en auto con familia argentina. Respondé SOLO con JSON sin texto extra ni backticks: {"rutas":[{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"},{"nombre":"string","km":number,"tiempo":"string","descripcion":"string"}],"lugares":[{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"},{"nombre":"string","descripcion":"string","tiempo":"string"}],"hospedajes":[{"nombre":"string","tipo":"camping","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"hostel","precio":"bajo","descripcion":"string"},{"nombre":"string","tipo":"cabaña","precio":"medio","descripcion":"string"}]}`}
+            {role:"system",content:"Sos un experto en turismo argentino. Conocés perfectamente las rutas, distancias y lugares de interés de Argentina. Siempre respondés con JSON válido y coordenadas geográficas PRECISAS para Argentina."},
+            {role:"user",content:`Viaje en auto por Argentina:
+- Origen: ${v.origen}
+- Destino: ${v.destino}  
+- Retiro del auto: ${retiro}
+- Devolución: ${devol}
+- Duración total: ${dias} día(s)
+- Personas: ${v.pers}
+
+Generá 3 opciones de viaje COMPLETAS y DIFERENTES entre sí. Cada opción debe incluir paradas a lo largo de la ruta real (no ir a lugares fuera de la ruta). Las paradas deben ser: miradores, lugares para comer, lugares para descansar, atracciones turísticas y donde dormir.
+
+IMPORTANTE: Las coordenadas lat/lng deben ser EXACTAS y correctas para cada lugar específico en Argentina. Los lugares deben estar a lo largo del camino entre ${v.origen} y ${v.destino}.
+
+Respondé SOLO con este JSON (sin texto extra, sin backticks):
+{"opciones":[{"nombre":"string","descripcion":"string","totalKm":number,"dias":[{"dia":number,"titulo":"string","paradas":[{"nombre":"string","tipo":"origen|comida|descanso|mirador|turistico|dormir|destino","descripcion":"string","horaLlegada":"HH:MM","duracion":"string","lat":number,"lng":number}]}]}]}`}
           ]
         })
       });
       const data=await res.json();
-      if(data.error){ setReco({error:data.error.message||"Error de API"}); setLoadingIA(false); return; }
+      if(data.error){console.error(data.error);setLoadingIA(false);return;}
       const txt=data.choices[0].message.content.replace(/```json|```/g,"").trim();
-      setReco(JSON.parse(txt));
+      const parsed=JSON.parse(txt);
+      setOpciones(parsed.opciones||[]);
       setEstado("listo");
-    }catch(e){ setReco({error:"No se pudo conectar. Verificá tu API Key de Groq en ⚙️ Config."}); }
+      setTab("opciones");
+    }catch(e){console.error("IA error:",e);}
     setLoadingIA(false);
   };
 
-  const cargarMapa=async()=>{
-    if(!viaje) return;
-    setLoadingM(true);
-    const pts=[];
-    const orig=await geocode(viaje.origen+", Argentina");
-    if(orig) pts.push({...orig,nombre:viaje.origen,tipo:"origen",descripcion:"Punto de partida"});
-
-    const tieneItin=itinerario.some(d=>d.lugares.length>0||d.hospedaje);
-    if(tieneItin){
-      let n=1;
-      for(const dia of itinerario){
-        for(const l of dia.lugares){ const c=await geocode(l.nombre+", Argentina"); if(c) pts.push({...c,nombre:l.nombre,descripcion:l.descripcion,tipo:"turistico",num:n++}); }
-        if(dia.hospedaje){ const c=await geocode(dia.hospedaje.nombre+", Argentina"); if(c) pts.push({...c,nombre:dia.hospedaje.nombre,descripcion:dia.hospedaje.descripcion,tipo:"hospedaje"}); }
-      }
-    } else if(reco&&!reco.error){
-      let n=1;
-      for(const l of (reco.lugares||[])){ const c=await geocode(l.nombre+", Argentina"); if(c) pts.push({...c,nombre:l.nombre,descripcion:l.descripcion,tipo:"turistico",num:n++}); }
-      for(const h of (reco.hospedajes||[])){ const c=await geocode(h.nombre+", Argentina"); if(c) pts.push({...c,nombre:h.nombre,descripcion:h.descripcion,tipo:"hospedaje"}); }
-    }
-
-    const dest=await geocode(viaje.destino+", Argentina");
-    if(dest) pts.push({...dest,nombre:viaje.destino,tipo:"destino",descripcion:"Destino final"});
-    setPuntos(pts); setLoadingM(false);
-  };
-
   const iniciarViaje=()=>{
-    const ahora=new Date();
-    setInicioR(ahora); setEstado("viajando");
+    setInicioR(new Date()); setEstado("viajando");
     if(navigator.geolocation){
       navigator.geolocation.watchPosition(
         pos=>setPosGPS({lat:pos.coords.latitude,lng:pos.coords.longitude}),
@@ -634,7 +611,6 @@ function App(){
         {enableHighAccuracy:true,maximumAge:30000}
       );
     }
-    cargarMapa();
     setTab("mapa");
   };
 
@@ -644,24 +620,20 @@ function App(){
     setModal(null); setFG({cat:"nafta",desc:"",monto:""});
   };
 
-  const litros=fN.km&&fN.rend?(parseFloat(fN.km)/parseFloat(fN.rend)).toFixed(1):0;
-  const costoN=litros&&fN.precio?Math.round(litros*parseFloat(fN.precio)):0;
-
   return(
     <div style={S.app}>
-      {/* Mapa siempre montado para que Leaflet no pierda el div */}
+      {/* Mapa siempre montado */}
       <div style={{display:tab==="mapa"?"block":"none",height:"calc(100vh - 72px)"}}>
-        <PantallaMapa viaje={viaje} reco={reco} puntos={puntos} loading={loadingM} posGPS={posGPS} estado={estado} onRecargar={cargarMapa}/>
+        <PantallaMapa viaje={viaje} opcionSel={opcionSel} posGPS={posGPS} estado={estado} loadingRuta={loadingM}/>
       </div>
 
-      {tab==="inicio"     && <PantallaInicio viaje={viaje} estado={estado} reco={reco} loading={loadingIA} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} onNuevo={()=>setModal("viaje")} onIA={buscarIA} onIniciar={iniciarViaje} setModal={setModal}/>}
-      {tab==="itinerario" && <PantallaItinerario viaje={viaje} reco={reco} itinerario={itinerario} setItinerario={setItin}/>}
-      {tab==="gastos"     && <PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
-      {tab==="config"     && <PantallaConfig apiKey={apiKey} setApiKey={setApiKey}/>}
+      {tab==="inicio"  &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} onNuevo={()=>setModal("viaje")} onIniciar={iniciarViaje} setTab={setTab}/>}
+      {tab==="opciones"&&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} setOpcionSel={setOpcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab}/>}
+      {tab==="gastos"  &&<PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
+      {tab==="config"  &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey}/>}
 
-      {modal==="viaje" && <ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)}/>}
-      {modal==="gasto" && <ModalGasto fG={fG} setFG={setFG} onAgregar={agregarGasto} onCerrar={()=>setModal(null)}/>}
-      {modal==="nafta" && <ModalNafta fN={fN} setFN={setFN} litros={litros} costoN={costoN} onAgregarComoGasto={()=>{setFG({cat:"nafta",desc:`Nafta — ${fN.km} km`,monto:String(costoN)});setModal("gasto");}} onCerrar={()=>setModal(null)}/>}
+      {modal==="viaje"&&<ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)}/>}
+      {modal==="gasto"&&<ModalGasto fG={fG} setFG={setFG} onAgregar={agregarGasto} onCerrar={()=>setModal(null)}/>}
 
       <div style={S.nav}>
         {TABS.map(t=>(
@@ -677,15 +649,6 @@ function App(){
 
 ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
-
-<script>
-if('serviceWorker' in navigator){
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js')
-      .then(r => console.log('SW registrado:', r.scope))
-      .catch(e => console.log('SW error:', e));
-  });
-}
-</script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').then(r=>console.log('SW:',r.scope)).catch(e=>console.log('SW error:',e)));}</script>
 </body>
 </html>

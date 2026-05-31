@@ -5,10 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
 <title>ViajeFácil 🚗</title>
 <meta name="theme-color" content="#2b6cb0"/>
+<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-title" content="ViajeFácil"/>
 <link rel="manifest" href="manifest.json"/>
 <link rel="apple-touch-icon" href="icon-192.png"/>
+<link rel="shortcut icon" href="icon-192.png" type="image/png"/>
+<link rel="icon" href="icon-192.png" type="image/png"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -636,59 +639,57 @@ function App(){
     const dias=calcDias(v.fRetiro,v.fDevol);
     const salida=fmtHora(v.fRetiro);
     const llegada=fmtHora(v.fDevol);
-    const prompt=`Planifica un viaje en auto por Argentina.
-Origen: ${v.origen}
-Destino: ${v.destino}
-Ruta preferida: ${v.ruta||"la mas directa"}
-Salida: ${salida}
-Devolucion auto: ${llegada}
-Duracion: ${dias} dias
-Personas: ${v.pers}
+    const prompt=`Sos un guia turistico experto en Argentina que conoce cada ciudad en profundidad. Tenes que planificar un viaje HORA POR HORA, como lo haria un guia local.
+
+DATOS DEL VIAJE:
+- Origen: ${v.origen}
+- Destino: ${v.destino}
+- Ruta: ${v.ruta||"la mas conveniente"}
+- Salida: ${salida}
+- Devolucion auto: ${llegada}
+- Duracion: ${dias} dias
+- Personas: ${v.pers}
 ${v.notas?"Preferencias: "+v.notas:""}
 
-Genera exactamente 3 opciones de viaje con paradas realistas.
-Velocidad promedio: 80 km/h en rutas argentinas.
-Para paradas tipo dormir: incluye 3 alojamientos de menor a mayor precio.
-Para paradas tipo comida: incluye 3 restaurantes de menor a mayor precio.
-Solo lugares sobre la ruta o a menos de 15 min de desvio.
-Horarios reales segun la hora de salida indicada.
-Coordenadas lat/lng correctas para Argentina.
+REGLAS IMPORTANTES:
+1. Planifica CADA HORA del dia. NO saltes de las 9am a las 12pm. Incluye actividades a las 9, 10, 11, 12, etc.
+2. Al LLEGAR DE NOCHE a una ciudad: recomienda que hacer de noche (plaza central iluminada, bares, paseo costanero, miradores nocturnos, heladeria local, etc.)
+3. MANANA: incluye donde desayunar (cafe, panaderia, confiteria local) entre 7:30-9:00, luego actividades matutinas
+4. Incluye ATRACCIONES ESPECIFICAS con nombres reales: catedrales, iglesias, museos, cerros, mercados, plazas, monumentos, parques nacionales, bodegues, etc.
+5. Para cada ciudad destaca sus atracciones MAS IMPORTANTES y caracteristicas
+6. Tiempo estimado en cada atraccion (catedral: 30-45 min, museo: 1-2hs, etc.)
+7. Para DORMIR: 3 opciones de menor a mayor precio con nombres reales
+8. Para COMER: 3 restaurantes reales o tipicos de la zona, de menor a mayor precio
+9. Velocidad promedio 80 km/h en rutas argentinas
+10. Horarios reales argentinos: almuerzo 12:30-14:00, merienda 17:00, cena 20:30-22:00
 
-Responde con JSON que tenga esta estructura:
-{
-  "opciones": [
-    {
-      "nombre": "string",
-      "descripcion": "string",
-      "totalKm": 0,
-      "tiempoTotalManejo": "string",
-      "dias": [
-        {
-          "dia": 1,
-          "titulo": "string",
-          "kmDelDia": 0,
-          "paradas": [
-            {
-              "nombre": "string",
-              "tipo": "origen",
-              "descripcion": "string",
-              "horaLlegada": "HH:MM",
-              "horaSalida": "HH:MM",
-              "duracion": "string",
-              "kmDesdeAnterior": "string",
-              "tiempoManejo": "string",
-              "lat": -26.8,
-              "lng": -65.2,
-              "alojamientos": [],
-              "restaurantes": []
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-Tipos validos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino`;
+TIPOS DE PARADAS (usa exactamente estos valores):
+- origen: punto de partida
+- ruta: parada rapida en ruta (combustible, bano, estirarse, 10-15 min)
+- descanso: parada de descanso en pueblo (30-60 min, algo para ver/tomar)
+- comida: desayuno, almuerzo o cena con opciones de restaurantes
+- turistico: atraccion turistica especifica (iglesia, museo, plaza, monumento)
+- mirador: punto panoramico o vista destacada
+- dormir: alojamiento nocturno con 3 opciones de precio
+- destino: ciudad/lugar destino final
+
+EJEMPLO de como debe verse para una llegada nocturna a Catamarca a las 21:00:
+- 21:00 dormir "Hotel en Catamarca" con 3 opciones alojamiento
+- 21:30 turistico "Plaza 25 de Mayo de noche" - paseo nocturno por el centro, ver la catedral iluminada, heladeria, bares
+- 22:30 comida "Cena en Catamarca" con 3 restaurantes tipicos
+EJEMPLO dia siguiente en Catamarca:
+- 08:00 comida "Desayuno" con opciones de confiterias
+- 09:00 turistico "Basilica de la Virgen del Valle" - la atraccion mas importante de Catamarca, 45 min
+- 10:00 turistico "Catedral Basilica" - frente a la plaza, arquitectura colonial, 30 min
+- 10:30 turistico "Museo del Hombre" o similar, 1hs
+- 12:00 turistico "Cerro El Calvario" - subida a pie con vistas panoramicas, 1.5hs
+- 13:30 comida "Almuerzo" con 3 opciones restaurantes
+- 15:00 continuar viaje...
+
+Genera exactamente 3 opciones de viaje DIFERENTES entre si (una mas turistica/cultural, una mas naturaleza/aventura, una mixta equilibrada).
+
+Responde SOLO con este JSON (sin texto extra, sin markdown, sin backticks):
+{"opciones":[{"nombre":"string","descripcion":"string","totalKm":0,"tiempoTotalManejo":"string","dias":[{"dia":1,"titulo":"string","kmDelDia":0,"paradas":[{"nombre":"string","tipo":"origen","descripcion":"string con detalle de que hacer/ver","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"string","kmDesdeAnterior":"string","tiempoManejo":"string","lat":-26.8,"lng":-65.2,"alojamientos":[{"nombre":"string","precio":"string","descripcion":"string"}],"restaurantes":[{"nombre":"string","precio":"string","descripcion":"string"}]}]}]}]}`;
 
     // Función para extraer y reparar JSON de la respuesta
     const extraerJSON = (txt) => {

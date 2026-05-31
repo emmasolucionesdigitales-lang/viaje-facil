@@ -639,57 +639,48 @@ function App(){
     const dias=calcDias(v.fRetiro,v.fDevol);
     const salida=fmtHora(v.fRetiro);
     const llegada=fmtHora(v.fDevol);
-    const prompt=`Sos un guia turistico experto en Argentina que conoce cada ciudad en profundidad. Tenes que planificar un viaje HORA POR HORA, como lo haria un guia local.
+    const prompt=`Sos un guia turistico experto en Argentina. Tenes que crear un itinerario de viaje MUY DETALLADO hora por hora, como si fueras un guia local que conoce cada ciudad.
 
-DATOS DEL VIAJE:
-- Origen: ${v.origen}
-- Destino: ${v.destino}
-- Ruta: ${v.ruta||"la mas conveniente"}
-- Salida: ${salida}
-- Devolucion auto: ${llegada}
-- Duracion: ${dias} dias
-- Personas: ${v.pers}
+DATOS:
+Origen: ${v.origen} | Destino: ${v.destino} | Ruta: ${v.ruta||"la mas conveniente"}
+Salida: ${salida} | Devolucion: ${llegada} | Duracion: ${dias} dias | Personas: ${v.pers}
 ${v.notas?"Preferencias: "+v.notas:""}
 
-REGLAS IMPORTANTES:
-1. Planifica CADA HORA del dia. NO saltes de las 9am a las 12pm. Incluye actividades a las 9, 10, 11, 12, etc.
-2. Al LLEGAR DE NOCHE a una ciudad: recomienda que hacer de noche (plaza central iluminada, bares, paseo costanero, miradores nocturnos, heladeria local, etc.)
-3. MANANA: incluye donde desayunar (cafe, panaderia, confiteria local) entre 7:30-9:00, luego actividades matutinas
-4. Incluye ATRACCIONES ESPECIFICAS con nombres reales: catedrales, iglesias, museos, cerros, mercados, plazas, monumentos, parques nacionales, bodegues, etc.
-5. Para cada ciudad destaca sus atracciones MAS IMPORTANTES y caracteristicas
-6. Tiempo estimado en cada atraccion (catedral: 30-45 min, museo: 1-2hs, etc.)
-7. Para DORMIR: 3 opciones de menor a mayor precio con nombres reales
-8. Para COMER: 3 restaurantes reales o tipicos de la zona, de menor a mayor precio
-9. Velocidad promedio 80 km/h en rutas argentinas
-10. Horarios reales argentinos: almuerzo 12:30-14:00, merienda 17:00, cena 20:30-22:00
+REGLA PRINCIPAL: Cada actividad, cada lugar para comer, cada atraccion DEBE SER UNA PARADA SEPARADA en el array. NO agrupes multiples actividades en una sola parada.
 
-TIPOS DE PARADAS (usa exactamente estos valores):
-- origen: punto de partida
-- ruta: parada rapida en ruta (combustible, bano, estirarse, 10-15 min)
-- descanso: parada de descanso en pueblo (30-60 min, algo para ver/tomar)
-- comida: desayuno, almuerzo o cena con opciones de restaurantes
-- turistico: atraccion turistica especifica (iglesia, museo, plaza, monumento)
-- mirador: punto panoramico o vista destacada
-- dormir: alojamiento nocturno con 3 opciones de precio
-- destino: ciudad/lugar destino final
+REGLAS DE PLANIFICACION:
+- Velocidad promedio: 80 km/h en rutas argentinas
+- Al LLEGAR DE NOCHE (despues de las 19hs): crear paradas nocturnas separadas (plaza iluminada, heladeria, bar tipico, paseo central). La gente no duerme apenas llega.
+- SIEMPRE incluir desayuno entre 7:30-9:00 como parada separada tipo "comida"
+- Cada atraccion turistica = una parada separada con hora de llegada y salida
+- Horarios reales: almuerzo 12:30-14:00, merienda 17:00, cena 20:30-22:00
+- Tiempo por atraccion: iglesia/catedral 30-45min, museo 1-2hs, mirador 30-60min, plaza 30min
 
-EJEMPLO de como debe verse para una llegada nocturna a Catamarca a las 21:00:
-- 21:00 dormir "Hotel en Catamarca" con 3 opciones alojamiento
-- 21:30 turistico "Plaza 25 de Mayo de noche" - paseo nocturno por el centro, ver la catedral iluminada, heladeria, bares
-- 22:30 comida "Cena en Catamarca" con 3 restaurantes tipicos
-EJEMPLO dia siguiente en Catamarca:
-- 08:00 comida "Desayuno" con opciones de confiterias
-- 09:00 turistico "Basilica de la Virgen del Valle" - la atraccion mas importante de Catamarca, 45 min
-- 10:00 turistico "Catedral Basilica" - frente a la plaza, arquitectura colonial, 30 min
-- 10:30 turistico "Museo del Hombre" o similar, 1hs
-- 12:00 turistico "Cerro El Calvario" - subida a pie con vistas panoramicas, 1.5hs
-- 13:30 comida "Almuerzo" con 3 opciones restaurantes
-- 15:00 continuar viaje...
+TIPOS de parada (exactamente estos):
+origen, ruta, descanso, comida, turistico, mirador, dormir, destino
 
-Genera exactamente 3 opciones de viaje DIFERENTES entre si (una mas turistica/cultural, una mas naturaleza/aventura, una mixta equilibrada).
+EJEMPLO CONCRETO de como deberia verse si llegamos a las 20hs a Catamarca:
+DIA 1 paradas:
+1. origen - Tucuman 17:00-17:00 - salida
+2. ruta - Parada en ruta RN38 19:00-19:20 - combustible y bano
+3. dormir - Hotel en Catamarca 20:30-08:00 - CHECK IN. alojamientos:[3 opciones precio]
+4. turistico - Plaza 25 de Mayo de noche 21:00-21:45 - paseo nocturno, ver catedral iluminada, fuentes
+5. comida - Cena en Catamarca 22:00-23:00 - restaurantes:[3 opciones precio]
 
-Responde SOLO con este JSON (sin texto extra, sin markdown, sin backticks):
-{"opciones":[{"nombre":"string","descripcion":"string","totalKm":0,"tiempoTotalManejo":"string","dias":[{"dia":1,"titulo":"string","kmDelDia":0,"paradas":[{"nombre":"string","tipo":"origen","descripcion":"string con detalle de que hacer/ver","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"string","kmDesdeAnterior":"string","tiempoManejo":"string","lat":-26.8,"lng":-65.2,"alojamientos":[{"nombre":"string","precio":"string","descripcion":"string"}],"restaurantes":[{"nombre":"string","precio":"string","descripcion":"string"}]}]}]}]}`;
+DIA 2 paradas:
+1. comida - Desayuno en Catamarca 08:00-09:00 - confiteria/cafe. restaurantes:[3 opciones]
+2. turistico - Basilica de la Virgen del Valle 09:15-10:00 - la atraccion mas importante de Catamarca, imagen colonial
+3. turistico - Catedral Basilica de Catamarca 10:00-10:45 - frente a plaza, arquitectura colonial imponente
+4. turistico - Museo Arqueologico Adán Quiroga 11:00-12:00 - ceramica indigena y cultura calchaqui
+5. mirador - Cerro El Calvario 12:15-13:45 - subida a pie 20min, vistas panoramicas de Catamarca
+6. comida - Almuerzo 14:00-15:30 - restaurantes:[3 opciones tipicos de Catamarca]
+7. turistico - Mercado Artesanal 15:45-16:30 - artesanias locales, tejidos, lapislazuli
+...continua hasta fin del dia
+
+Genera 3 opciones DISTINTAS (cultural, naturaleza/aventura, gastronomica). Cada una con minimo 6-8 paradas por dia.
+
+JSON requerido (responde SOLO esto, sin texto extra):
+{"opciones":[{"nombre":"string","descripcion":"string","totalKm":0,"tiempoTotalManejo":"string","dias":[{"dia":1,"titulo":"string","kmDelDia":0,"paradas":[{"nombre":"string","tipo":"string","descripcion":"string","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"string","kmDesdeAnterior":"string","tiempoManejo":"string","lat":0.0,"lng":0.0,"alojamientos":[],"restaurantes":[]}]}]}]}`;
 
     // Función para extraer y reparar JSON de la respuesta
     const extraerJSON = (txt) => {

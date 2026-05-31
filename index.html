@@ -364,19 +364,32 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
               </div>
             )}
 
+            {/* Opciones listas */}
             {!loadingIA&&!iaError&&opciones?.length>0&&estado!=="viajando"&&(
               <div style={{...S.card,background:"#f0fff4",border:"1.5px solid #68d391"}}>
-                <div style={{fontWeight:"bold",color:"#276749",fontSize:15,marginBottom:4}}>✅ ¡3 opciones de viaje listas!</div>
-                <div style={{fontSize:13,color:"#4a5568"}}>Andá a <strong>🗂️ Opciones</strong> para ver el itinerario detallado y elegir el tuyo</div>
+                <div style={{fontWeight:"bold",color:"#276749",fontSize:15,marginBottom:4}}>✅ ¡3 opciones listas!</div>
+                <div style={{fontSize:13,color:"#4a5568"}}>Andá a <strong>🗂️ Opciones</strong> para ver el itinerario y elegir</div>
                 {opcionSel&&<div style={{fontSize:13,color:"#2b6cb0",marginTop:6,fontWeight:"bold"}}>📌 Seleccionada: {opcionSel.nombre}</div>}
+                <button style={S.btn("#38a169")} onClick={()=>setTab("opciones")}>🗂️ Ver mis opciones</button>
               </div>
             )}
 
+            {/* Sin opciones todavía — botón para generar */}
+            {!loadingIA&&!iaError&&(!opciones||opciones.length===0)&&estado!=="viajando"&&(
+              <div style={{...S.card,textAlign:"center",padding:20,background:"#fffbeb",border:"1.5px solid #f6e05e"}}>
+                <div style={{fontSize:36}}>🤖</div>
+                <div style={{fontWeight:"bold",color:"#744210",marginTop:8,fontSize:15}}>Todavía no generaste las opciones</div>
+                <div style={{fontSize:13,color:"#744210",marginTop:4}}>Tocá el botón para que la IA planifique tu viaje</div>
+                <button style={S.btn("#d69e2e")} onClick={onReintentar}>🔍 Generar opciones con IA</button>
+              </div>
+            )}
+
+            {/* Opción seleccionada — listo para salir */}
             {opcionSel&&(estado==="listo")&&(
               <div style={{...S.card,textAlign:"center",background:"#f0fff4",border:"2px solid #38a169"}}>
                 <div style={{fontSize:36}}>🚦</div>
                 <div style={{fontWeight:"bold",color:"#276749",fontSize:16,marginTop:8}}>¡Todo listo para partir!</div>
-                <div style={{fontSize:13,color:"#718096",margin:"6px 0 4px"}}>Cuando retirés el auto, tocá este botón. Recién ahí empieza el contador.</div>
+                <div style={{fontSize:13,color:"#718096",margin:"6px 0 4px"}}>Cuando retirés el auto tocá este botón. Recién ahí empieza el contador.</div>
                 <button style={S.btn("#38a169")} onClick={onIniciar}>🚗 Iniciar Viaje</button>
               </div>
             )}

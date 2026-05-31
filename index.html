@@ -294,6 +294,22 @@ function PantallaConfig({apiKey,setApiKey}){
           {!apiKey&&<div style={{marginTop:8,padding:10,background:"#fffbeb",borderRadius:8,textAlign:"center"}}><span style={{fontSize:13,color:"#744210"}}>⚠️ Sin clave — la IA no puede planificar viajes</span></div>}
         </div>
         <div style={S.card}>
+          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:8}}>🔄 Forzar actualización</div>
+          <div style={{fontSize:13,color:"#718096",marginBottom:10}}>Si la app no muestra cambios recientes, tocá este botón para limpiar el caché y recargar la versión más nueva.</div>
+          <button style={S.btn("#e53e3e",true)} onClick={()=>{
+            if('serviceWorker' in navigator){
+              navigator.serviceWorker.getRegistrations().then(regs=>{
+                regs.forEach(r=>r.unregister());
+                caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>{
+                  window.location.reload(true);
+                });
+              });
+            } else {
+              window.location.reload(true);
+            }
+          }}>🗑️ Limpiar caché y recargar</button>
+        </div>
+        <div style={S.card}>
           <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:8}}>📖 Cómo obtener la clave (gratis)</div>
           {[["1️⃣","Entrá a console.groq.com"],["2️⃣","Creá una cuenta con Google"],["3️⃣","Andá a 'API Keys' en el menú izquierdo"],["4️⃣","Click en 'Create API Key'"],["5️⃣","Copiá la clave y pegala arriba"]].map(([n,t])=>(<div key={n} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f4f4f4",alignItems:"center"}}><span style={{fontSize:16,minWidth:28}}>{n}</span><span style={{fontSize:13,color:"#4a5568"}}>{t}</span></div>))}
         </div>
@@ -305,7 +321,7 @@ function PantallaConfig({apiKey,setApiKey}){
 function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pct,alerta,opcionSel,historial,onNuevo,onIniciar,onFinalizar,setTab,onReintentar}){
   return(
     <div>
-      <div style={S.hdr("#2b6cb0")}><div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div><div style={{fontSize:13,opacity:.8}}>Planificador inteligente de viajes</div></div>
+      <div style={S.hdr("#2b6cb0")}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v3.1</div></div><div style={{fontSize:13,opacity:.8}}>Planificador inteligente de viajes</div></div>
       <div style={{padding:16}}>
         {!viaje?(
           <div style={{...S.card,textAlign:"center",padding:36}}>

@@ -115,6 +115,13 @@ function MapaLeaflet({paradas,posGPS}){
     if(_ml){_map.removeLayer(_ml);_ml=null;}
     if(_rl){_map.removeLayer(_rl);_rl=null;}
     if(!paradas?.length) return;
+    // Filtrar paradas con coordenadas claramente erróneas (fuera de Argentina)
+    const ARGENTINA = {latMin:-55, latMax:-21, lngMin:-73, lngMax:-53};
+    paradas = paradas.filter(p => {
+      if(!p.lat||!p.lng) return false;
+      return p.lat>=ARGENTINA.latMin && p.lat<=ARGENTINA.latMax && 
+             p.lng>=ARGENTINA.lngMin && p.lng<=ARGENTINA.lngMax;
+    });
     _ml=L.layerGroup().addTo(_map);
     const bounds=[];
     paradas.forEach(p=>{
@@ -421,7 +428,7 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
   );
 }
 
-function PantallaOpciones({opciones,opcionSel,setOpcionSel,loadingIA,iaError,viaje,setTab}){
+function PantallaOpciones({opciones,opcionSel,setOpcionSel,loadingIA,iaError,viaje,setTab,generarItinerario,loadingDetalle}){
   const [expandido,setExpandido]=useState(null);
   if(!viaje) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"#718096",marginTop:8}}>Creá un viaje primero en 🏠 Inicio</div></div></div></div>);
   if(loadingIA) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44,animation:"spin 1s linear infinite"}}>🤖</div><div style={{fontWeight:"bold",color:"#2d3748",marginTop:12}}>Generando 3 itinerarios completos...</div><div style={{fontSize:13,color:"#718096",marginTop:6}}>Calculando paradas, tiempos y recomendaciones</div></div></div></div>);
@@ -460,23 +467,24 @@ function PantallaOpciones({opciones,opcionSel,setOpcionSel,loadingIA,iaError,via
                 </div>
               </div>
 
-              {/* Itinerario expandible */}
-              {abierto&&(
-                <div style={{marginTop:16,borderTop:"1px solid #f4f4f4",paddingTop:16}} className="fade-in">
-                  {op.dias?.map((dia,di)=>(
-                    <div key={di} style={{marginBottom:16}}>
-                      <div style={{fontWeight:"bold",color:"white",background:c,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <span>📅 Día {dia.dia}: {dia.titulo}</span>
-                        {dia.kmDelDia&&<span style={{fontSize:12,opacity:.85}}>📏 {dia.kmDelDia} km</span>}
-                      </div>
-                      {dia.paradas?.map((p,pi)=>(<Parada key={pi} p={p} isLast={pi===dia.paradas.length-1}/>))}
-                    </div>
-                  ))}
+              {/* Ciudades etapa */}
+              {abierto&&op.ciudadesEtapa?.length>0&&(
+                <div style={{marginTop:12,borderTop:"1px solid #f4f4f4",paddingTop:12}} className="fade-in">
+                  <div style={{fontSize:13,color:"#4a5568",marginBottom:8,fontWeight:"bold"}}>📍 Ciudades en el camino:</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {op.ciudadesEtapa.map((c,i)=>(
+                      <span key={i} style={{background:"#edf2f7",color:"#4a5568",borderRadius:8,padding:"4px 10px",fontSize:13}}>📌 {c}</span>
+                    ))}
+                  </div>
+                  <div style={{marginTop:12,padding:12,background:"#fffbeb",borderRadius:10,fontSize:13,color:"#744210"}}>
+                    💡 Al elegir esta opción la IA generará el itinerario completo hora por hora con todas las actividades, atracciones, restaurantes y hospedajes.
+                  </div>
                 </div>
               )}
 
-              <button style={S.btn(c,!sel)} onClick={()=>{setOpcionSel(op);LS.set("opcionSel",op);setTab("mapa");}}>
-                {sel?"✅ Seleccionada — Ver en Mapa 🗺️":`Elegir Opción ${oi+1} y ver en mapa`}
+              <button style={S.btn(c,false)} onClick={()=>generarItinerario(op)}
+                disabled={loadingDetalle}>
+                {loadingDetalle?"⏳ Generando itinerario completo...":sel?"🔄 Regenerar itinerario":"🗺️ Elegir y generar itinerario completo"}
               </button>
             </div>
           );
@@ -651,76 +659,48 @@ function App(){
   const buscarIA=async(viajeData)=>{
     const v=viajeData||viaje;
     if(!v||!apiKey){setIaError("Configurá tu API Key de Groq en ⚙️ Config");return;}
-    setLoadingIA(true); setOpciones([]); setIaError("");
+    setLoadingIA(true); setOpciones([]); setOpcionSel(null); setIaError("");
     const dias=calcDias(v.fRetiro,v.fDevol);
-    const salida=fmtHora(v.fRetiro);
-    const llegada=fmtHora(v.fDevol);
-    const prompt=`Sos un guia turistico experto en Argentina. Tenes que crear un itinerario de viaje MUY DETALLADO hora por hora, como si fueras un guia local que conoce cada ciudad.
+    try{
+      const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},
+        body:JSON.stringify({
+          model:"llama-3.3-70b-versatile",
+          max_tokens:3000,
+          temperature:0.4,
+          response_format:{"type":"json_object"},
+          messages:[
+            {role:"system",content:"Sos un experto en turismo argentino. Respondes solo JSON valido."},
+            {role:"user",content:`Viaje en auto: desde ${v.origen} hasta ${v.destino}. Ruta: ${v.ruta||"la mas directa"}. Duracion: ${dias} dias. Personas: ${v.pers}.${v.notas?" Preferencias: "+v.notas:""}
 
-DATOS:
-Origen: ${v.origen} | Destino: ${v.destino} | Ruta: ${v.ruta||"la mas conveniente"}
-Salida: ${salida} | Devolucion: ${llegada} | Duracion: ${dias} dias | Personas: ${v.pers}
-${v.notas?"Preferencias: "+v.notas:""}
+Dame 3 estilos de viaje DIFERENTES (cultural, naturaleza, gastronomico) con sus paradas principales. Las coordenadas deben ser EXACTAS y estar entre ${v.origen} y ${v.destino} Argentina.
 
-REGLA PRINCIPAL: Cada actividad, cada lugar para comer, cada atraccion DEBE SER UNA PARADA SEPARADA en el array. NO agrupes multiples actividades en una sola parada.
+JSON:
+{"opciones":[{"nombre":"string","descripcion":"string","estilo":"cultural|naturaleza|gastronomico","totalKm":0,"ciudadesEtapa":["ciudad1","ciudad2"],"lat_origen":0.0,"lng_origen":0.0,"lat_destino":0.0,"lng_destino":0.0}]}`}
+          ]
+        })
+      });
+      const data=await res.json();
+      if(data.error) throw new Error(data.error.message);
+      let txt=data.choices[0].message.content.trim().replace(/```json|```/g,"");
+      const parsed=JSON.parse(txt);
+      if(!parsed.opciones?.length) throw new Error("No se generaron opciones");
+      setOpciones(parsed.opciones);
+      setEstado("listo");
+      setTab("opciones");
+    }catch(e){
+      console.error(e);
+      setIaError(e.message||"Error al conectar con la IA. Verificá tu API Key en ⚙️ Config.");
+    }
+    setLoadingIA(false);
+  };
 
-REGLAS DE PLANIFICACION:
-- Velocidad promedio: 80 km/h en rutas argentinas
-- Al LLEGAR DE NOCHE (despues de las 19hs): crear paradas nocturnas separadas (plaza iluminada, heladeria, bar tipico, paseo central). La gente no duerme apenas llega.
-- SIEMPRE incluir desayuno entre 7:30-9:00 como parada separada tipo "comida"
-- Cada atraccion turistica = una parada separada con hora de llegada y salida
-- Horarios reales: almuerzo 12:30-14:00, merienda 17:00, cena 20:30-22:00
-- Tiempo por atraccion: iglesia/catedral 30-45min, museo 1-2hs, mirador 30-60min, plaza 30min
-
-TIPOS de parada (exactamente estos):
-origen, ruta, descanso, comida, turistico, mirador, dormir, destino
-
-EJEMPLO CONCRETO de como deberia verse si llegamos a las 20hs a Catamarca:
-DIA 1 paradas:
-1. origen - Tucuman 17:00-17:00 - salida
-2. ruta - Parada en ruta RN38 19:00-19:20 - combustible y bano
-3. dormir - Hotel en Catamarca 20:30-08:00 - CHECK IN. alojamientos:[3 opciones precio]
-4. turistico - Plaza 25 de Mayo de noche 21:00-21:45 - paseo nocturno, ver catedral iluminada, fuentes
-5. comida - Cena en Catamarca 22:00-23:00 - restaurantes:[3 opciones precio]
-
-DIA 2 paradas:
-1. comida - Desayuno en Catamarca 08:00-09:00 - confiteria/cafe. restaurantes:[3 opciones]
-2. turistico - Basilica de la Virgen del Valle 09:15-10:00 - la atraccion mas importante de Catamarca, imagen colonial
-3. turistico - Catedral Basilica de Catamarca 10:00-10:45 - frente a plaza, arquitectura colonial imponente
-4. turistico - Museo Arqueologico Adán Quiroga 11:00-12:00 - ceramica indigena y cultura calchaqui
-5. mirador - Cerro El Calvario 12:15-13:45 - subida a pie 20min, vistas panoramicas de Catamarca
-6. comida - Almuerzo 14:00-15:30 - restaurantes:[3 opciones tipicos de Catamarca]
-7. turistico - Mercado Artesanal 15:45-16:30 - artesanias locales, tejidos, lapislazuli
-...continua hasta fin del dia
-
-Genera 3 opciones DISTINTAS (cultural, naturaleza/aventura, gastronomica). Cada una con minimo 6-8 paradas por dia.
-
-JSON requerido (responde SOLO esto, sin texto extra):
-{"opciones":[{"nombre":"string","descripcion":"string","totalKm":0,"tiempoTotalManejo":"string","dias":[{"dia":1,"titulo":"string","kmDelDia":0,"paradas":[{"nombre":"string","tipo":"string","descripcion":"string","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"string","kmDesdeAnterior":"string","tiempoManejo":"string","lat":0.0,"lng":0.0,"alojamientos":[],"restaurantes":[]}]}]}]}`;
-
-    // Función para extraer y reparar JSON de la respuesta
-    const extraerJSON = (txt) => {
-      if(!txt) return null;
-      // Limpiar backticks y markdown
-      txt = txt.replace(/```json/gi,"").replace(/```/g,"").trim();
-      // Extraer desde el primer { hasta el último }
-      const start = txt.indexOf("{");
-      const end   = txt.lastIndexOf("}");
-      if(start < 0 || end < 0 || end <= start) return null;
-      txt = txt.slice(start, end + 1);
-      // Intento 1: parsear directo
-      try { return JSON.parse(txt); } catch(e1) { console.log("JSON parse error:", e1.message.slice(0,80)); }
-      // Intento 2: limpiar caracteres de control y parsear
-      try {
-        const cleaned = txt
-          .replace(/[\x00-\x1F\x7F]/g, " ")  // Eliminar caracteres de control
-          .replace(/,\s*}/g, "}")               // Coma antes de }
-          .replace(/,\s*]/g, "]");              // Coma antes de ]
-        return JSON.parse(cleaned);
-      } catch(e2) {}
-      return null;
-    };
-
+  const generarItinerario=async(opcion)=>{
+    if(!viaje||!apiKey) return;
+    setLoadingDetalle(true);
+    const dias=calcDias(viaje.fRetiro,viaje.fDevol);
+    const salida=fmtHora(viaje.fRetiro);
     try{
       const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
         method:"POST",
@@ -731,33 +711,52 @@ JSON requerido (responde SOLO esto, sin texto extra):
           temperature:0.3,
           response_format:{"type":"json_object"},
           messages:[
-            {role:"system",content:"Sos un experto en turismo argentino. Debes responder UNICAMENTE con un objeto JSON valido. Sin texto antes ni despues. Sin markdown. Sin backticks. Solo JSON puro."},
-            {role:"user",content:prompt}
+            {role:"system",content:"Sos un guia turistico local experto en Argentina. Conoces cada ciudad en detalle. Respondes solo JSON valido sin texto extra."},
+            {role:"user",content:`Crea un itinerario COMPLETO hora por hora para este viaje estilo "${opcion.estilo}":
+Desde: ${viaje.origen} | Hasta: ${viaje.destino}
+Ruta: ${viaje.ruta||"la mas directa"} | Salida: ${salida} | Duracion: ${dias} dias | Personas: ${viaje.pers}
+Ciudades etapa sugeridas: ${opcion.ciudadesEtapa?.join(", ")||""}
+${viaje.notas?"Preferencias: "+viaje.notas:""}
+
+REGLAS CRITICAS:
+- Planifica CADA HORA del dia: manana, mediodia, siesta (13-16hs), tarde, merienda (17hs), noche
+- Llegada nocturna: primero hospedaje, luego plaza/bar de noche, luego cena
+- Manana: desayuno 8hs, luego atracciones matutinas
+- Tarde: actividades 16-19hs (museos, paseos, mercados)
+- Merienda: cafe o confiteria local 17hs
+- Cena: 21hs aproximadamente
+- Desvios max 60km del trayecto principal
+- Cada lugar = UNA parada separada (no agrupar)
+- Coordenadas lat/lng EXACTAS para Argentina, todos los puntos entre ${viaje.origen} y ${viaje.destino}
+
+TIPOS: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
+
+Para "dormir": alojamientos:[{"nombre":"str","precio":"str","descripcion":"str"}] con 3 opciones menor a mayor precio
+Para "comida": restaurantes:[{"nombre":"str","precio":"str","descripcion":"str"}] con 3 opciones menor a mayor precio
+Para otros tipos: alojamientos:[] y restaurantes:[]
+
+JSON:
+{"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str detallada de que ver/hacer","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-27.0,"lng":-65.0,"alojamientos":[],"restaurantes":[]}]}]}`}
           ]
         })
       });
-      if(!res.ok){
-        const errBody=await res.text();
-        let msg="Error HTTP "+res.status;
-        try{ msg=JSON.parse(errBody).error?.message||msg; }catch{}
-        throw new Error(msg);
-      }
       const data=await res.json();
       if(data.error) throw new Error(data.error.message);
-      const rawTxt=data.choices[0].message.content||"";
-      console.log("IA respuesta (primeros 200 chars):", rawTxt.slice(0,200));
-      const parsed=extraerJSON(rawTxt);
-      if(!parsed){ throw new Error("La IA devolvió un formato inesperado. Reintentá — a veces pasa con respuestas muy largas."); }
-      if(!parsed.opciones?.length){ throw new Error("La IA no generó opciones. Reintentá con un destino más específico."); }
-      setOpciones(parsed.opciones);
-      setEstado("listo");
-      setTab("opciones");
+      let txt=data.choices[0].message.content.trim().replace(/```json|```/g,"");
+      const parsed=JSON.parse(txt);
+      if(!parsed.dias) throw new Error("Formato incorrecto");
+      // Merge con la opcion seleccionada
+      const opcionCompleta={...opcion, dias:parsed.dias, totalKm:opcion.totalKm||0};
+      setOpcionSel(opcionCompleta);
+      LS.set("opcionSel",opcionCompleta);
+      setTab("mapa");
     }catch(e){
-      console.error("IA Error:",e);
-      setIaError(e.message||"Error al conectar. Verificá tu API Key de Groq en ⚙️ Config.");
+      console.error(e);
+      alert("Error al generar el itinerario: "+e.message+"\nIntentá de nuevo.");
     }
-    setLoadingIA(false);
+    setLoadingDetalle(false);
   };
+
 
   const iniciarViaje=()=>{
     setInicioR(new Date()); setEstado("viajando");
@@ -792,7 +791,7 @@ JSON requerido (responde SOLO esto, sin texto extra):
         <PantallaMapa viaje={viaje} opcionSel={opcionSel} posGPS={posGPS} estado={estado}/>
       </div>
       {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} onNuevo={()=>setModal("viaje")} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} setTab={setTab} onReintentar={()=>buscarIA(viaje)}/>}
-      {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} setOpcionSel={setOpcionSel} loadingIA={loadingIA} iaError={iaError} viaje={viaje} setTab={setTab}/>}
+      {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} setOpcionSel={setOpcionSel} loadingIA={loadingIA} iaError={iaError} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle}/>}
       {tab==="gastos"    &&<PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
       {tab==="historial" &&<PantallaHistorial historial={historial} onEliminar={id=>setHistorial(p=>p.filter(h=>h.id!==id))}/>}
       {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey}/>}

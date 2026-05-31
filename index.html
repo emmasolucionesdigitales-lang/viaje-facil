@@ -623,31 +623,82 @@ function App(){
     const dias=calcDias(v.fRetiro,v.fDevol);
     const salida=fmtHora(v.fRetiro);
     const llegada=fmtHora(v.fDevol);
-    const prompt=`Planificá un viaje en auto por Argentina con estos datos:
-- Origen: ${v.origen}
-- Destino: ${v.destino}
-- Ruta preferida: ${v.ruta||"la más conveniente"}
-- Salida: ${salida}
-- Devolución del auto: ${llegada}
-- Duración: ${dias} día(s)
-- Personas: ${v.pers}
-${v.notas?`- Preferencias: ${v.notas}`:""}
+    const prompt=`Planifica un viaje en auto por Argentina.
+Origen: ${v.origen}
+Destino: ${v.destino}
+Ruta preferida: ${v.ruta||"la mas directa"}
+Salida: ${salida}
+Devolucion auto: ${llegada}
+Duracion: ${dias} dias
+Personas: ${v.pers}
+${v.notas?"Preferencias: "+v.notas:""}
 
-Generá 3 opciones de viaje DIFERENTES y DETALLADAS. Cada opción debe:
-1. Usar velocidad promedio real de 80 km/h en rutas argentinas
-2. Planificar paradas de descanso cada 2 horas de manejo (tipo parador o pueblo)
-3. Incluir dónde dormir con 3 opciones de MENOR A MAYOR precio (hostel/camping → hotel)
-4. Incluir dónde comer con 3 opciones de MENOR A MAYOR precio (restaurante económico → premium)
-5. Incluir atracciones turísticas CERCA DE LA RUTA (máx 15 min fuera del camino)
-6. Cada parada con hora de llegada Y hora de salida realistas
-7. Km y tiempo de manejo desde la parada anterior
+Genera exactamente 3 opciones de viaje con paradas realistas.
+Velocidad promedio: 80 km/h en rutas argentinas.
+Para paradas tipo dormir: incluye 3 alojamientos de menor a mayor precio.
+Para paradas tipo comida: incluye 3 restaurantes de menor a mayor precio.
+Solo lugares sobre la ruta o a menos de 15 min de desvio.
+Horarios reales segun la hora de salida indicada.
+Coordenadas lat/lng correctas para Argentina.
 
-IMPORTANTE: Las coordenadas lat/lng deben ser EXACTAS para cada lugar en Argentina.
+Responde con JSON que tenga esta estructura:
+{
+  "opciones": [
+    {
+      "nombre": "string",
+      "descripcion": "string",
+      "totalKm": 0,
+      "tiempoTotalManejo": "string",
+      "dias": [
+        {
+          "dia": 1,
+          "titulo": "string",
+          "kmDelDia": 0,
+          "paradas": [
+            {
+              "nombre": "string",
+              "tipo": "origen",
+              "descripcion": "string",
+              "horaLlegada": "HH:MM",
+              "horaSalida": "HH:MM",
+              "duracion": "string",
+              "kmDesdeAnterior": "string",
+              "tiempoManejo": "string",
+              "lat": -26.8,
+              "lng": -65.2,
+              "alojamientos": [],
+              "restaurantes": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+Tipos validos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino`;
 
-Respondé SOLO con JSON sin texto extra ni backticks:
-{"opciones":[{"nombre":"string","descripcion":"string","totalKm":number,"tiempoTotalManejo":"string","dias":[{"dia":number,"titulo":"string","kmDelDia":number,"paradas":[{"nombre":"string","tipo":"origen|ruta|descanso|comida|turistico|mirador|dormir|destino","descripcion":"string","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"string","kmDesdeAnterior":"string","tiempoManejo":"string","lat":number,"lng":number,"alojamientos":[{"nombre":"string","tipo":"string","precio":"string","descripcion":"string"}],"restaurantes":[{"nombre":"string","tipo":"string","precio":"string","descripcion":"string"}]}]}]}]}
-
-Nota: alojamientos y restaurantes solo para paradas tipo "dormir" y "comida" respectivamente (array vacío [] para los demás).`;
+    // Función para extraer y reparar JSON de la respuesta
+    const extraerJSON = (txt) => {
+      if(!txt) return null;
+      // Limpiar backticks y markdown
+      txt = txt.replace(/```json/gi,"").replace(/```/g,"").trim();
+      // Extraer desde el primer { hasta el último }
+      const start = txt.indexOf("{");
+      const end   = txt.lastIndexOf("}");
+      if(start < 0 || end < 0 || end <= start) return null;
+      txt = txt.slice(start, end + 1);
+      // Intento 1: parsear directo
+      try { return JSON.parse(txt); } catch(e1) { console.log("JSON parse error:", e1.message.slice(0,80)); }
+      // Intento 2: limpiar caracteres de control y parsear
+      try {
+        const cleaned = txt
+          .replace(/[\x00-\x1F\x7F]/g, " ")  // Eliminar caracteres de control
+          .replace(/,\s*}/g, "}")               // Coma antes de }
+          .replace(/,\s*]/g, "]");              // Coma antes de ]
+        return JSON.parse(cleaned);
+      } catch(e2) {}
+      return null;
+    };
 
     try{
       const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
@@ -655,34 +706,34 @@ Nota: alojamientos y restaurantes solo para paradas tipo "dormir" y "comida" res
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},
         body:JSON.stringify({
           model:"llama-3.3-70b-versatile",
-          max_tokens:4000,
-          temperature:0.7,
+          max_tokens:8000,
+          temperature:0.3,
+          response_format:{"type":"json_object"},
           messages:[
-            {role:"system",content:"Sos un experto en turismo y viajes en auto por Argentina. Conocés perfectamente las rutas nacionales, distancias reales, lugares turísticos, hospedajes y restaurantes de todo el país. Respondés siempre con JSON válido, preciso y detallado."},
+            {role:"system",content:"Sos un experto en turismo argentino. Debes responder UNICAMENTE con un objeto JSON valido. Sin texto antes ni despues. Sin markdown. Sin backticks. Solo JSON puro."},
             {role:"user",content:prompt}
           ]
         })
       });
       if(!res.ok){
-        const err=await res.json().catch(()=>({error:{message:"Error de conexión"}}));
-        throw new Error(err.error?.message||`Error HTTP ${res.status}`);
+        const errBody=await res.text();
+        let msg="Error HTTP "+res.status;
+        try{ msg=JSON.parse(errBody).error?.message||msg; }catch{}
+        throw new Error(msg);
       }
       const data=await res.json();
       if(data.error) throw new Error(data.error.message);
-      let txt=data.choices[0].message.content.trim();
-      // Limpiar posibles backticks o texto extra
-      txt=txt.replace(/^```json\s*/,"").replace(/^```\s*/,"").replace(/\s*```$/,"").trim();
-      // Si hay texto antes del JSON, extraer solo el JSON
-      const jsonStart=txt.indexOf("{");
-      if(jsonStart>0) txt=txt.slice(jsonStart);
-      const parsed=JSON.parse(txt);
-      if(!parsed.opciones?.length) throw new Error("La IA no generó opciones válidas. Intentá de nuevo.");
+      const rawTxt=data.choices[0].message.content||"";
+      console.log("IA respuesta (primeros 200 chars):", rawTxt.slice(0,200));
+      const parsed=extraerJSON(rawTxt);
+      if(!parsed){ throw new Error("La IA devolvió un formato inesperado. Reintentá — a veces pasa con respuestas muy largas."); }
+      if(!parsed.opciones?.length){ throw new Error("La IA no generó opciones. Reintentá con un destino más específico."); }
       setOpciones(parsed.opciones);
       setEstado("listo");
       setTab("opciones");
     }catch(e){
       console.error("IA Error:",e);
-      setIaError(e.message||"Error al conectar. Verificá tu API Key y tu conexión a internet.");
+      setIaError(e.message||"Error al conectar. Verificá tu API Key de Groq en ⚙️ Config.");
     }
     setLoadingIA(false);
   };

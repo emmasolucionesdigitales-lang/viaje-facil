@@ -364,7 +364,7 @@ function PantallaConfig({apiKey,setApiKey}){
   return(
     <div>
       <div style={S.hdr("#4a5568")}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Config</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v5.0</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Config</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v5.1</div></div>
         <div style={{fontSize:13,opacity:.8}}>Configuración guardada en tu celular</div>
       </div>
       <div style={{padding:16}}>
@@ -489,7 +489,7 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v5.0</div>
+            <div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v5.1</div>
             <button onClick={()=>setTab("config")} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:16}}>⚙️</button>
           </div>
         </div>
@@ -835,11 +835,11 @@ function App(){
           response_format:{"type":"json_object"},
           messages:[
             {role:"system",content:"Sos un experto en turismo argentino. Respondes solo JSON valido."},
-            {role:"user",content:`Viaje en auto Argentina: ${v.origen} → ${v.destino}. Ruta: ${v.ruta||"directa"}. ${dias} dias. ${v.pers} personas. Salida: ${fmtHora(v.fRetiro)}. Regreso limite: ${horaLimite}.${v.notas?" Preferencias: "+v.notas:""}
+            {role:"user",content:`Viaje en auto por el norte argentino: ${v.origen} → ${v.destino}. Ruta preferida: ${v.ruta||"a definir"}. ${dias} dias. ${v.pers} personas. Salida: ${fmtHora(v.fRetiro)}. Regreso limite: ${horaLimite}.${v.notas?" Preferencias: "+v.notas:""}
 
-3 estilos de viaje distintos.
+Genera 3 opciones que se diferencien por la RUTA y el ritmo del viaje (no por tematica). Ejemplo: si hay alternativa panoramica vs autopista, cada opcion usa un camino distinto. Usa numeros de ruta reales (RN9, RN34, RN66, autopistas).
 
-JSON: {"opciones":[{"nombre":"str","descripcion":"str","estilo":"cultural","totalKm":280,"ciudadesEtapa":["c1","c2"]},{"nombre":"str","descripcion":"str","estilo":"naturaleza","totalKm":300,"ciudadesEtapa":["c1"]},{"nombre":"str","descripcion":"str","estilo":"gastronomico","totalKm":280,"ciudadesEtapa":["c1","c2"]}]}`}
+JSON: {"opciones":[{"nombre":"Ruta rapida y segura","descripcion":"detalle de rutas usadas y por que","estilo":"rapida","totalKm":0,"rutasUsadas":["RN9","autopista"],"ciudadesEtapa":["c1","c2"]},{"nombre":"Ruta panoramica","descripcion":"detalle","estilo":"panoramica","totalKm":0,"rutasUsadas":["RN9 cuesta"],"ciudadesEtapa":["c1","c2","c3"]},{"nombre":"Ruta con maximas paradas","descripcion":"detalle","estilo":"completa","totalKm":0,"rutasUsadas":["RN9"],"ciudadesEtapa":["c1","c2","c3","c4"]}]}`}
           ]
         })
       });
@@ -869,26 +869,35 @@ JSON: {"opciones":[{"nombre":"str","descripcion":"str","estilo":"cultural","tota
           response_format:{"type":"json_object"},
           messages:[
             {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido."},
-            {role:"user",content:`Itinerario COMPLETO estilo "${opcion.estilo}":
-${viaje.origen} → ${viaje.destino} | Ruta: ${viaje.ruta||"directa"} | Salida: ${salida} | ${dias} dias | ${viaje.pers} personas
-LIMITE REGRESO: estar en ${viaje.origen} antes de ${horaLimite}
-Ciudades: ${opcion.ciudadesEtapa?.join(", ")||""}
+            {role:"user",content:`Crea una HOJA DE RUTA detallada y segura para viaje en auto, opcion "${opcion.nombre}" (${opcion.estilo}):
+${viaje.origen} → ${viaje.destino} | Rutas: ${opcion.rutasUsadas?.join(", ")||viaje.ruta||"reales del trayecto"} | Salida: ${salida} | ${dias} dias | ${viaje.pers} personas
+LIMITE DE REGRESO: estar en ${viaje.origen} antes de ${horaLimite}
+Ciudades del camino: ${opcion.ciudadesEtapa?.join(", ")||""}
 ${viaje.notas?"Preferencias: "+viaje.notas:""}
 
-REGLAS:
-1. CADA HORA planificada: manana(8-12), mediodia(12-14), siesta(14-16), tarde(16-19), merienda(17), noche(19-23)
-2. Llegada nocturna: hotel + paseo plaza nocturno + cena (3 paradas separadas)
-3. Desayuno 8hs cada manana
-4. Minimo 7-8 paradas/dia, cada lugar = parada separada
-5. Ultimo dia: salir a tiempo para llegar antes de ${horaLimite}
-6. Desvios max 60km
-7. Nombres REALES de lugares
-8. dormir: 3 alojamientos menor a mayor precio / comida: 3 restaurantes menor a mayor
-9. lat/lng REALES de Argentina
+PRIORIDADES en orden: 1) SEGURIDAD 2) mejores paisajes 3) maxima cantidad de paradas y lugares para conocer
+
+REGLAS DE RUTA (obligatorias):
+1. Usa rutas REALES con numero (RN9, RN34, RN66, autopistas) y mencionalas en las descripciones
+2. Velocidades permitidas reales: autopista 110-120 km/h, ruta nacional 80-110, montaña/cuesta 40-60. Calcula tiempos con eso
+3. Considera el estado real de las rutas del NOA (cuestas con curvas, tramos lentos, ripio)
+4. Parada de DESCANSO cada 2 horas de manejo MAXIMO (parador, estacion de servicio o pueblo con nombre real) tipo "descanso"
+5. Parada de COMBUSTIBLE cada 300-350 km en estacion de servicio real (YPF, Shell de tal ciudad) tipo "ruta", indicando "cargar combustible" en la descripcion
+6. Cada parada: kmDesdeAnterior y tiempoManejo calculados
+
+REGLAS DE CIUDADES (obligatorias):
+7. Al llegar a cada ciudad importante: MINI-TOUR con sus atracciones principales NOMBRADAS, CADA UNA como parada separada. Ejemplos: plaza principal, casa de gobierno, catedral, mirador, museo, lugares emblematicos de esa ciudad
+8. Cada atraccion: tiempo de visita en "duracion" y distancia en "kmDesdeAnterior"
+9. Lugares para FOTOS destacados en la descripcion
+10. Segun el horario: desayuno 8hs, almuerzo 13hs, merienda 17hs, cena 21hs, hospedaje al llegar de noche. Comidas y hospedaje = paradas separadas
+11. Para "dormir": 3 alojamientos reales de menor a mayor precio / Para "comida": 3 restaurantes reales de menor a mayor precio
+12. Minimo 8-10 paradas por dia. NO saltees franjas horarias
+13. Ultimo dia: hora de salida calculada para llegar antes de ${horaLimite}
+14. lat/lng REALES de Argentina para cada lugar
 
 Tipos: origen,ruta,descanso,comida,turistico,mirador,dormir,destino
 
-JSON: {"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-27.5,"lng":-65.8,"alojamientos":[],"restaurantes":[]}]}]}`}
+JSON: {"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str con ruta usada y detalle","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}]}`}
           ]
         })
       });

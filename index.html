@@ -101,9 +101,15 @@ async function getOSRM(pts){
 
 async function getClima(lat,lng,fIni,fFin){
   try{
-    const d1=new Date(fIni).toISOString().split("T")[0];
-    const d2=new Date(fFin).toISOString().split("T")[0];
-    const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&start_date=${d1}&end_date=${d2}`);
+    const hoy=new Date(); hoy.setHours(0,0,0,0);
+    let d1=new Date(fIni), d2=new Date(fFin);
+    if(d1<hoy) d1=new Date(hoy);
+    const max=new Date(hoy); max.setDate(max.getDate()+15);
+    if(d2>max) d2=new Date(max);
+    if(d1>d2) return null;
+    const s1=d1.toISOString().split("T")[0];
+    const s2=d2.toISOString().split("T")[0];
+    const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&start_date=${s1}&end_date=${s2}`);
     const d=await r.json();
     if(d.daily) return d.daily;
   }catch{}
@@ -132,15 +138,16 @@ const S={
 };
 
 // ── MAPA ──────────────────────────────────────────────────
-let _map=null,_ml=null,_rl=null,_gm=null;
+let _map=null,_ml=null,_rl=null,_gm=null,_lastBounds=null;
+window._centrarMapa=(lat,lng)=>{if(_map&&lat&&lng){_map.setView([lat,lng],14);}};
 function MapaLeaflet({paradas,posGPS}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current||_map) return;
     _map=L.map(ref.current,{zoomControl:true}).setView([-27,-65],6);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:19}).addTo(_map);
+    setTimeout(()=>{if(_map)_map.invalidateSize();},150);
   },[]);
-  useEffect(()=>{setTimeout(()=>{if(_map)_map.invalidateSize();},200);},[]);
   useEffect(()=>{
     if(!_map) return;
     if(_ml){_map.removeLayer(_ml);_ml=null;}
@@ -149,16 +156,16 @@ function MapaLeaflet({paradas,posGPS}){
     if(!pts.length) return;
     _ml=L.layerGroup().addTo(_map);
     const bounds=[];
-    pts.forEach(p=>{
+    pts.forEach((p,idx)=>{
       const t=TIPOS[p.tipo]||TIPOS.turistico;
       const ico=L.divIcon({
-        html:`<div style="background:${t.color};color:white;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 10px rgba(0,0,0,0.4);border:2px solid white;">${t.icon}</div>`,
+        html:`<div style="position:relative;width:38px;height:38px"><div style="background:${t.color};color:white;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 10px rgba(0,0,0,0.4);border:2px solid white;">${t.icon}</div><div style="position:absolute;top:-5px;right:-5px;background:#1a202c;color:white;border-radius:50%;min-width:17px;height:17px;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;border:1.5px solid white;padding:0 2px">${idx+1}</div></div>`,
         className:"",iconSize:[38,38],iconAnchor:[19,19],popupAnchor:[0,-22]
       });
-      let popHtml=`<div style="min-width:220px;font-family:system-ui"><div style="background:${t.color};color:white;padding:8px 12px;margin:-13px -19px 10px;border-radius:4px 4px 0 0;font-weight:bold">${t.icon} ${p.nombre}</div><div style="font-size:12px;color:#555;margin-bottom:6px">${t.label}${p.horaLlegada?" · 🕐 "+p.horaLlegada:""}</div>${p.descripcion?`<div style="font-size:13px;color:#333;margin-bottom:6px">${p.descripcion}</div>`:""}`;
+      let popHtml=`<div style="min-width:220px;font-family:system-ui"><div style="background:${t.color};color:white;padding:8px 12px;margin:-13px -19px 10px;border-radius:4px 4px 0 0;font-weight:bold">#${idx+1} ${t.icon} ${p.nombre}</div><div style="font-size:12px;color:#555;margin-bottom:6px">${t.label}${p.horaLlegada?" · 🕐 Llega "+p.horaLlegada:""}${p.horaSalida?" · Sale "+p.horaSalida:""}</div>${p.descripcion?`<div style="font-size:13px;color:#333;margin-bottom:6px">${p.descripcion}</div>`:""}${p.kmDesdeAnterior?`<div style="font-size:11px;color:#888">📏 ${p.kmDesdeAnterior}${p.tiempoManejo?" · ⏱ "+p.tiempoManejo:""}</div>`:""}`;
       if(p.alojamientos?.length){popHtml+=`<div style="margin-top:6px;font-weight:bold;font-size:12px">🏨 Hospedaje:</div>`;p.alojamientos.forEach(a=>{popHtml+=`<div style="font-size:12px;padding:2px 0"><b>${a.nombre}</b> · <span style="color:#38a169">${a.precio}</span></div>`;});}
       if(p.restaurantes?.length){popHtml+=`<div style="margin-top:6px;font-weight:bold;font-size:12px">🍽️ Comer:</div>`;p.restaurantes.forEach(r=>{popHtml+=`<div style="font-size:12px;padding:2px 0"><b>${r.nombre}</b> · <span style="color:#ed8936">${r.precio}</span></div>`;});}
-      popHtml+=`<a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" style="display:block;margin-top:8px;background:#2b6cb0;color:white;text-align:center;padding:7px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:bold">🧭 Navegar con Google Maps</a></div>`;
+      popHtml+=`<a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" style="display:block;margin-top:8px;background:#2b6cb0;color:white;text-align:center;padding:7px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:bold">🧭 Navegar</a></div>`;
       L.marker([p.lat,p.lng],{icon:ico}).bindPopup(popHtml,{maxWidth:260}).addTo(_ml);
       bounds.push([p.lat,p.lng]);
     });
@@ -169,7 +176,7 @@ function MapaLeaflet({paradas,posGPS}){
         _rl=L.polyline(ruta||pts.map(p=>[p.lat,p.lng]),{color:"#2b6cb0",weight:5,opacity:.8,dashArray:ruta?null:"10,6"}).addTo(_map);
       });
     }
-    if(bounds.length) _map.fitBounds(bounds,{padding:[50,50],maxZoom:11});
+    if(bounds.length){_lastBounds=bounds;_map.fitBounds(bounds,{padding:[40,40],maxZoom:11});}
   },[paradas]);
   useEffect(()=>{
     if(!_map) return;
@@ -643,19 +650,73 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
 
 function PantallaMapa({viaje,opcionSel,posGPS,estado}){
   const paradas=opcionSel?.dias?.flatMap(d=>d.paradas||[])||[];
+  // índice global para numerar igual que el mapa (solo cuentan las que tienen coords válidas)
+  let numGlobal=0;
+  const conNum=opcionSel?.dias?.map(d=>({
+    ...d,
+    paradas:(d.paradas||[]).map(p=>{
+      const valida=p.lat&&p.lng&&p.lat>=-55&&p.lat<=-21&&p.lng>=-73&&p.lng<=-53;
+      return {...p,_num:valida?++numGlobal:null};
+    })
+  }))||[];
   return(
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 72px)"}}>
-      <div style={S.hdr("#e53e3e")}><div style={{fontSize:22,fontWeight:"bold"}}>🗺️ Mapa</div><div style={{fontSize:13,opacity:.8}}>{opcionSel?.nombre||"Elegí una opción"}</div></div>
-      {opcionSel?.dias&&(
-        <div style={{padding:"8px 12px",background:"white",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8,flexWrap:"wrap"}}>
-          {Object.entries(TIPOS).map(([k,t])=>(<div key={k} style={{display:"flex",alignItems:"center",gap:3,fontSize:11,color:"#4a5568"}}><div style={{background:t.color,color:"white",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9}}>{t.icon}</div>{t.label}</div>))}
-        </div>
+      <div style={{...S.hdr("#e53e3e"),padding:"12px 20px 10px"}}><div style={{fontSize:19,fontWeight:"bold"}}>🗺️ Mapa e Itinerario</div><div style={{fontSize:12,opacity:.8}}>{opcionSel?.nombre||"Elegí una opción"}</div></div>
+      {!viaje&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,color:"#a0aec0"}}><div style={{fontSize:48}}>🗺️</div><div style={{marginTop:10}}>Creá un viaje en 🏠</div></div>}
+      {viaje&&!opcionSel?.dias&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,color:"#a0aec0",textAlign:"center",padding:20}}><div style={{fontSize:48}}>🗂️</div><div style={{marginTop:10,color:"#4a5568"}}>Elegí una opción en 🗂️</div></div>}
+      {viaje&&opcionSel?.dias&&(
+        <>
+          {/* Mapa */}
+          <div style={{height:"40%",minHeight:220,position:"relative",borderBottom:"3px solid #e53e3e"}}>
+            <MapaLeaflet paradas={paradas} posGPS={posGPS}/>
+          </div>
+          {/* Itinerario detallado */}
+          <div style={{flex:1,overflowY:"auto",background:"#f7fafc",padding:"10px 12px"}}>
+            <div style={{fontSize:12,color:"#718096",textAlign:"center",marginBottom:8}}>📍 Tocá una parada para verla en el mapa · Los números coinciden con el mapa</div>
+            {conNum.map((dia,di)=>(
+              <div key={di} style={{marginBottom:14}}>
+                <div style={{fontWeight:"bold",color:"white",background:"#2b6cb0",borderRadius:10,padding:"8px 14px",marginBottom:8,fontSize:13,display:"flex",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}}>
+                  <span>📅 Día {dia.dia}: {dia.titulo}</span>
+                  {dia.kmDelDia?<span style={{fontSize:11,opacity:.85}}>📏 {dia.kmDelDia} km</span>:null}
+                </div>
+                {dia.paradas.map((p,pi)=>{
+                  const t=TIPOS[p.tipo]||TIPOS.turistico;
+                  return(
+                    <div key={pi} onClick={()=>p.lat&&p.lng&&window._centrarMapa(p.lat,p.lng)}
+                      style={{display:"flex",gap:10,background:"white",borderRadius:12,padding:"10px 12px",marginBottom:6,cursor:p.lat?"pointer":"default",boxShadow:"0 1px 3px rgba(0,0,0,0.06)",borderLeft:`4px solid ${t.color}`}}>
+                      <div style={{position:"relative",flexShrink:0}}>
+                        <div style={{background:t.color,color:"white",borderRadius:"50%",width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>{t.icon}</div>
+                        {p._num&&<div style={{position:"absolute",top:-4,right:-4,background:"#1a202c",color:"white",borderRadius:"50%",minWidth:16,height:16,fontSize:9,fontWeight:"bold",display:"flex",alignItems:"center",justifyContent:"center",border:"1.5px solid white"}}>{p._num}</div>}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:6,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:"bold",color:"#2d3748",fontSize:13}}>{p.nombre}</span>
+                          {p.horaLlegada&&<span style={{background:`${t.color}18`,color:t.color,borderRadius:6,padding:"1px 7px",fontSize:11,fontWeight:"bold",whiteSpace:"nowrap"}}>🕐 {p.horaLlegada}{p.horaSalida?` → ${p.horaSalida}`:""}</span>}
+                        </div>
+                        <div style={{fontSize:11,color:"#718096",marginTop:2}}>
+                          {t.label}
+                          {p.duracion?` · ⏳ ${p.duracion}`:""}
+                          {p.kmDesdeAnterior?` · 📏 ${p.kmDesdeAnterior}`:""}
+                          {p.tiempoManejo?` · 🚗 ${p.tiempoManejo}`:""}
+                        </div>
+                        {p.descripcion&&<div style={{fontSize:12,color:"#4a5568",marginTop:3,lineHeight:1.35}}>{p.descripcion}</div>}
+                        {(p.alojamientos?.length>0||p.restaurantes?.length>0)&&(
+                          <div style={{fontSize:11,color:"#2b6cb0",marginTop:3,fontWeight:"bold"}}>
+                            {p.alojamientos?.length>0?`🏨 ${p.alojamientos.length} hospedajes`:""}
+                            {p.alojamientos?.length>0&&p.restaurantes?.length>0?" · ":""}
+                            {p.restaurantes?.length>0?`🍽️ ${p.restaurantes.length} restaurantes`:""}
+                            <span style={{color:"#a0aec0",fontWeight:"normal"}}> — tocá el marcador en el mapa</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </>
       )}
-      <div style={{flex:1,position:"relative"}}>
-        {!viaje&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",color:"#a0aec0"}}><div style={{fontSize:48}}>🗺️</div><div style={{marginTop:10}}>Creá un viaje en 🏠</div></div>}
-        {viaje&&!opcionSel?.dias&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",color:"#a0aec0",textAlign:"center",padding:20}}><div style={{fontSize:48}}>🗂️</div><div style={{marginTop:10,color:"#4a5568"}}>Elegí una opción en 🗂️</div></div>}
-        {viaje&&opcionSel?.dias&&<MapaLeaflet paradas={paradas} posGPS={posGPS}/>}
-      </div>
     </div>
   );
 }
@@ -772,7 +833,13 @@ function App(){
   useEffect(()=>LS.set("completadas",completadas),[completadas]);
   useEffect(()=>LS.set("equipaje",equipaje),[equipaje]);
   useEffect(()=>{if(inicioR)LS.set("inicioR",inicioR.toISOString());},[inicioR]);
-  useEffect(()=>{if(tab==="mapa"&&_map)setTimeout(()=>_map.invalidateSize(),200);},[tab]);
+  useEffect(()=>{
+    if(tab==="mapa"){
+      [100,400,900].forEach(ms=>setTimeout(()=>{
+        if(_map){_map.invalidateSize();if(_lastBounds&&_lastBounds.length)_map.fitBounds(_lastBounds,{padding:[40,40],maxZoom:11});}
+      },ms));
+    }
+  },[tab]);
 
   // Clima al crear viaje
   useEffect(()=>{

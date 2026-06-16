@@ -371,7 +371,7 @@ function PantallaConfig({apiKey,setApiKey}){
   return(
     <div>
       <div style={S.hdr("#4a5568")}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Config</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v5.1</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Config</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v6.1</div></div>
         <div style={{fontSize:13,opacity:.8}}>Configuración guardada en tu celular</div>
       </div>
       <div style={{padding:16}}>
@@ -496,7 +496,7 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v5.1</div>
+            <div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v6.1</div>
             <button onClick={()=>setTab("config")} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:16}}>⚙️</button>
           </div>
         </div>
@@ -613,10 +613,43 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                   <span style={S.bdg("#718096")}>🎨 {op.estilo}</span>
                 </div>
               </div>
-              {abierto&&op.ciudadesEtapa?.length>0&&!sel&&(
+              {abierto&&!sel&&(
                 <div style={{marginTop:12,borderTop:"1px solid #f4f4f4",paddingTop:12}} className="fade-in">
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-                    {op.ciudadesEtapa.map((ciudad,i)=>(<span key={i} style={{background:"#edf2f7",color:"#4a5568",borderRadius:8,padding:"4px 10px",fontSize:13}}>📌 {ciudad}</span>))}
+                  {op.resumen&&<div style={{fontSize:13,color:"#4a5568",marginBottom:10,lineHeight:1.4}}>{op.resumen}</div>}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                    <div style={{background:"#f7fafc",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontSize:11,color:"#718096"}}>📏 Distancia</div>
+                      <div style={{fontSize:15,fontWeight:"bold",color:"#2d3748"}}>{op.km||"?"} km</div>
+                    </div>
+                    <div style={{background:"#f7fafc",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontSize:11,color:"#718096"}}>🚗 Manejo</div>
+                      <div style={{fontSize:15,fontWeight:"bold",color:"#2d3748"}}>{op.tiempoManejo||"?"}</div>
+                    </div>
+                    <div style={{background:"#ebf8ff",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontSize:11,color:"#718096"}}>⏱️ Total estimado</div>
+                      <div style={{fontSize:15,fontWeight:"bold",color:"#2b6cb0"}}>{op.tiempoTotal||"?"}</div>
+                    </div>
+                    <div style={{background:"#f0fff4",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontSize:11,color:"#718096"}}>✅ Ventaja</div>
+                      <div style={{fontSize:12,fontWeight:"bold",color:"#276749"}}>{op.ventaja||"—"}</div>
+                    </div>
+                  </div>
+                  {op.rutasUsadas?.length>0&&(
+                    <div style={{marginBottom:8}}>
+                      <span style={{fontSize:12,color:"#718096",fontWeight:"bold"}}>🛣️ Rutas: </span>
+                      {op.rutasUsadas.map((r,i)=>(<span key={i} style={{background:"#e2e8f0",color:"#4a5568",borderRadius:6,padding:"2px 8px",fontSize:12,marginRight:4}}>{r}</span>))}
+                    </div>
+                  )}
+                  {op.lugaresEnRuta?.length>0&&(
+                    <div>
+                      <div style={{fontSize:12,color:"#718096",fontWeight:"bold",marginBottom:6}}>⭐ Lugares en esta ruta:</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                        {op.lugaresEnRuta.map((l,i)=>(<span key={i} style={{background:"#0bc5ea18",color:"#0987a0",borderRadius:8,padding:"3px 10px",fontSize:12}}>📍 {l}</span>))}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{marginTop:12,padding:10,background:"#fffbeb",borderRadius:10,fontSize:12,color:"#744210"}}>
+                    💡 Al elegir esta ruta, la IA genera la hoja de ruta completa: descansos, dónde cargar combustible, lugares para conocer y el detalle en el mapa.
                   </div>
                 </div>
               )}
@@ -672,6 +705,23 @@ function PantallaMapa({viaje,opcionSel,posGPS,estado}){
           </div>
           {/* Itinerario detallado */}
           <div style={{flex:1,overflowY:"auto",background:"#f7fafc",padding:"10px 12px"}}>
+            {opcionSel.presupuesto&&(
+              <div style={{background:"white",borderRadius:14,padding:14,marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.08)",border:"2px solid #d69e2e"}}>
+                <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:10}}>💰 Presupuesto estimado del viaje</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",background:"#fef5f5",borderRadius:8}}><span style={{fontSize:12,color:"#718096"}}>⛽ Combustible</span><span style={{fontSize:13,fontWeight:"bold",color:"#e53e3e"}}>{fmtM(opcionSel.presupuesto.combustible)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",background:"#ebf8ff",borderRadius:8}}><span style={{fontSize:12,color:"#718096"}}>🏨 Alojamiento</span><span style={{fontSize:13,fontWeight:"bold",color:"#3182ce"}}>{fmtM(opcionSel.presupuesto.alojamiento)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",background:"#fffaf0",borderRadius:8}}><span style={{fontSize:12,color:"#718096"}}>🍽️ Comida</span><span style={{fontSize:13,fontWeight:"bold",color:"#ed8936"}}>{fmtM(opcionSel.presupuesto.comida)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",background:"#f0fff4",borderRadius:8}}><span style={{fontSize:12,color:"#718096"}}>🎫 Extras</span><span style={{fontSize:13,fontWeight:"bold",color:"#38a169"}}>{fmtM(opcionSel.presupuesto.extras)}</span></div>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:"2px solid #f4f4f4"}}>
+                  <span style={{fontSize:14,fontWeight:"bold",color:"#2d3748"}}>Total estimado</span>
+                  <span style={{fontSize:20,fontWeight:"bold",color:"#d69e2e"}}>{fmtM(opcionSel.presupuesto.total)}</span>
+                </div>
+                {viaje.pers>1&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:6,fontSize:12,color:"#718096"}}><span>Por persona ({viaje.pers})</span><span style={{fontWeight:"bold"}}>{fmtM(Math.ceil(opcionSel.presupuesto.total/viaje.pers))}</span></div>}
+                {opcionSel.presupuesto.detalle&&<div style={{fontSize:11,color:"#a0aec0",marginTop:6,fontStyle:"italic"}}>{opcionSel.presupuesto.detalle}</div>}
+              </div>
+            )}
             <div style={{fontSize:12,color:"#718096",textAlign:"center",marginBottom:8}}>📍 Tocá una parada para verla en el mapa · Los números coinciden con el mapa</div>
             {conNum.map((dia,di)=>(
               <div key={di} style={{marginBottom:14}}>
@@ -902,11 +952,19 @@ function App(){
           response_format:{"type":"json_object"},
           messages:[
             {role:"system",content:"Sos un experto en turismo argentino. Respondes solo JSON valido."},
-            {role:"user",content:`Viaje en auto por el norte argentino: ${v.origen} → ${v.destino}. Ruta preferida: ${v.ruta||"a definir"}. ${dias} dias. ${v.pers} personas. Salida: ${fmtHora(v.fRetiro)}. Regreso limite: ${horaLimite}.${v.notas?" Preferencias: "+v.notas:""}
+            {role:"user",content:`Planificacion de viaje EFICIENTE en auto: ${v.origen} → ${v.destino}. Ruta preferida del usuario: ${v.ruta||"a definir por vos"}. ${v.pers} personas. Salida: ${fmtHora(v.fRetiro)}. LIMITE de regreso a ${v.origen}: ${horaLimite}.${v.notas?" Preferencias: "+v.notas:""}
 
-Genera 3 opciones que se diferencien por la RUTA y el ritmo del viaje (no por tematica). Ejemplo: si hay alternativa panoramica vs autopista, cada opcion usa un camino distinto. Usa numeros de ruta reales (RN9, RN34, RN66, autopistas).
+Sos un planificador de rutas experto en el NOA argentino. El objetivo es que el viaje sea EFICIENTE y SEGURO (lo que Google Maps no calcula: descansos, combustible, paradas para conocer sin desviarse).
 
-JSON: {"opciones":[{"nombre":"Ruta rapida y segura","descripcion":"detalle de rutas usadas y por que","estilo":"rapida","totalKm":0,"rutasUsadas":["RN9","autopista"],"ciudadesEtapa":["c1","c2"]},{"nombre":"Ruta panoramica","descripcion":"detalle","estilo":"panoramica","totalKm":0,"rutasUsadas":["RN9 cuesta"],"ciudadesEtapa":["c1","c2","c3"]},{"nombre":"Ruta con maximas paradas","descripcion":"detalle","estilo":"completa","totalKm":0,"rutasUsadas":["RN9"],"ciudadesEtapa":["c1","c2","c3","c4"]}]}`}
+Dame 3 OPCIONES DE RUTA realmente distintas para ir de ${v.origen} a ${v.destino}. Cada opcion usa un camino diferente (ej: una rapida por autopista, una panoramica por cuesta, una mixta con mas pueblos). Usa numeros de ruta REALES (RN9, RN34, RN66, etc).
+
+Para cada opcion calcula:
+- distancia total real en km
+- tiempo de manejo puro (velocidades permitidas: autopista 110-120, ruta 80-110, montaña 40-60)
+- tiempo total estimado SUMANDO descansos y paradas cortas
+- ventaja principal de esa ruta
+
+JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUsadas":["RN9"],"km":280,"tiempoManejo":"3h 30m","tiempoTotal":"5h","lugaresEnRuta":["lugar1","lugar2"],"ventaja":"la mas rapida y segura"},{"nombre":"Ruta panoramica","resumen":"...","rutasUsadas":["RN9 cuesta"],"km":310,"tiempoManejo":"4h","tiempoTotal":"6h","lugaresEnRuta":["lugar1","lugar2","lugar3"],"ventaja":"mejores paisajes"},{"nombre":"Ruta con mas paradas","resumen":"...","rutasUsadas":["RN9","RN34"],"km":300,"tiempoManejo":"4h","tiempoTotal":"7h","lugaresEnRuta":["lugar1","lugar2","lugar3","lugar4"],"ventaja":"mas lugares para conocer"}]}`}
           ]
         })
       });
@@ -936,35 +994,41 @@ JSON: {"opciones":[{"nombre":"Ruta rapida y segura","descripcion":"detalle de ru
           response_format:{"type":"json_object"},
           messages:[
             {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido."},
-            {role:"user",content:`Crea una HOJA DE RUTA detallada y segura para viaje en auto, opcion "${opcion.nombre}" (${opcion.estilo}):
-${viaje.origen} → ${viaje.destino} | Rutas: ${opcion.rutasUsadas?.join(", ")||viaje.ruta||"reales del trayecto"} | Salida: ${salida} | ${dias} dias | ${viaje.pers} personas
-LIMITE DE REGRESO: estar en ${viaje.origen} antes de ${horaLimite}
-Ciudades del camino: ${opcion.ciudadesEtapa?.join(", ")||""}
+            {role:"user",content:`Sos un planificador experto del NOA argentino. Crea la hoja de ruta para la opcion "${opcion.nombre}".
+
+DATOS:
+${viaje.origen} → ${viaje.destino} | Rutas base: ${opcion.rutasUsadas?.join(", ")||viaje.ruta} | ${opcion.km} km
+Salida: ${salida} | ${viaje.pers} personas | LIMITE regreso a ${viaje.origen}: antes de ${horaLimite}
 ${viaje.notas?"Preferencias: "+viaje.notas:""}
 
-PRIORIDADES en orden: 1) SEGURIDAD 2) mejores paisajes 3) maxima cantidad de paradas y lugares para conocer
+PENSA LA RUTA PASO A PASO (coherencia geografica OBLIGATORIA):
+- El recorrido debe ser CONTINUO y con sentido geografico. NUNCA hagas ir y volver al mismo lugar para tomar otra ruta.
+- Si vas por los Valles (RN40), el orden logico es: Tucuman → Tafi del Valle → Amaicha → Ruinas de Quilmes → Colalao → Cafayate, y desde Cafayate seguir hacia el norte. NO volver a Tucuman.
+- En cada punto de bifurcacion real (ej: en Cafayate elegir RN40 o RN68) mencionalo en la descripcion con el estado de ruta y tiempo de cada alternativa.
+- Distribui el viaje en los dias segun la duracion. Si llegada tarde a un punto, ese es el lugar para dormir, y al dia siguiente se continua desde ahi.
 
-REGLAS DE RUTA (obligatorias):
-1. Usa rutas REALES con numero (RN9, RN34, RN66, autopistas) y mencionalas en las descripciones
-2. Velocidades permitidas reales: autopista 110-120 km/h, ruta nacional 80-110, montaña/cuesta 40-60. Calcula tiempos con eso
-3. Considera el estado real de las rutas del NOA (cuestas con curvas, tramos lentos, ripio)
-4. Parada de DESCANSO cada 2 horas de manejo MAXIMO (parador, estacion de servicio o pueblo con nombre real) tipo "descanso"
-5. Parada de COMBUSTIBLE cada 300-350 km en estacion de servicio real (YPF, Shell de tal ciudad) tipo "ruta", indicando "cargar combustible" en la descripcion
-6. Cada parada: kmDesdeAnterior y tiempoManejo calculados
+PARA CADA TRAMO calcula con velocidades reales (autopista 110-120, ruta 80-110, montaña/cuesta 40-60):
+- kmDesdeAnterior y tiempoManejo
+- DESCANSO cada ~2hs de manejo en pueblo/parador real
+- COMBUSTIBLE antes de quedarte sin nafta (estaciones reales), tipo "ruta", "Cargar combustible" en descripcion
 
-REGLAS DE CIUDADES (obligatorias):
-7. Al llegar a cada ciudad importante: MINI-TOUR con sus atracciones principales NOMBRADAS, CADA UNA como parada separada. Ejemplos: plaza principal, casa de gobierno, catedral, mirador, museo, lugares emblematicos de esa ciudad
-8. Cada atraccion: tiempo de visita en "duracion" y distancia en "kmDesdeAnterior"
-9. Lugares para FOTOS destacados en la descripcion
-10. Segun el horario: desayuno 8hs, almuerzo 13hs, merienda 17hs, cena 21hs, hospedaje al llegar de noche. Comidas y hospedaje = paradas separadas
-11. Para "dormir": 3 alojamientos reales de menor a mayor precio / Para "comida": 3 restaurantes reales de menor a mayor precio
-12. Minimo 8-10 paradas por dia. NO saltees franjas horarias
-13. Ultimo dia: hora de salida calculada para llegar antes de ${horaLimite}
-14. lat/lng REALES de Argentina para cada lugar
+PARA CADA LUGAR turistico:
+- tiempo de visita REALISTA en "duracion" (ej: Pucara de Tilcara 1h, Garganta del Diablo 1.5h, Cerro 7 Colores 45min)
+- en la descripcion: cuanto tiempo SUMA el desvio y que paisajes/fotos ofrece
+- da VARIAS opciones de lugares en cada ciudad importante (no solo 1 o 2)
 
-Tipos: origen,ruta,descanso,comida,turistico,mirador,dormir,destino
+COMIDAS segun el horario real del viaje: desayuno 8h, almuerzo 13h, merienda 17h, cena 21h. Cada una como parada "comida" con 3 restaurantes reales de menor a mayor precio.
+DORMIR cuando corresponda por horario: parada "dormir" con 3 alojamientos reales de menor a mayor precio.
 
-JSON: {"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str con ruta usada y detalle","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}]}`}
+ULTIMO DIA: salir a primera hora para llegar a ${viaje.origen} antes de ${horaLimite} (con margen para lavar y entregar el auto).
+
+PRESUPUESTO: estima el costo total del viaje en pesos argentinos actuales (combustible segun km y consumo promedio, alojamiento por noche, comidas, entradas/extras).
+
+lat/lng REALES de Argentina para cada parada.
+
+Tipos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
+
+JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"total":0,"detalle":"str"},"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str con ruta, tiempo que suma y paisajes","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}]}`}
           ]
         })
       });
@@ -981,7 +1045,7 @@ JSON: {"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","
           }
         }
       }
-      const completa={...opcion,dias:parsed.dias};
+      const completa={...opcion,dias:parsed.dias,presupuesto:parsed.presupuesto||null};
       setOpcionSel(completa);
       LS.set("opcionSel",completa);
       setCompletadas([]);

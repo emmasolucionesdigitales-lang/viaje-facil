@@ -18,20 +18,31 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
+:root{
+  --bg:#f0f4f8; --card-bg:#ffffff; --text:#2d3748; --text-soft:#718096; --border:#e2e8f0; --input-bg:#ffffff;
+}
+[data-theme="dark"]{
+  --bg:#10141c; --card-bg:#1c232e; --text:#e6edf3; --text-soft:#9aa7b5; --border:#30394a; --input-bg:#151b25;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#f0f4f8;font-family:system-ui,-apple-system,sans-serif;overflow-x:hidden}
+body{background:var(--bg);font-family:system-ui,-apple-system,sans-serif;overflow-x:hidden;transition:background .2s}
 input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 .leaflet-container{font-family:system-ui!important}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.5)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .fade-in{animation:fadeIn .35s ease}
+@media (min-width:480px){
+  body{padding:24px 0}
+  .app-frame{box-shadow:0 10px 45px rgba(0,0,0,0.22);border-radius:20px;overflow:hidden;border:1px solid var(--border)}
+}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
+const VERSION="7.0";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -77,6 +88,7 @@ function calcHoraLimite(fDevol,bufferHoras){
   d.setHours(d.getHours()-(bufferHoras||3));
   return d.toLocaleString("es-AR",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});
 }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 async function geocodeNominatim(nombre){
   try{
@@ -123,18 +135,18 @@ const navegarA=(lat,lng,nombre)=>{
 
 // ── ESTILOS ───────────────────────────────────────────────
 const S={
-  app:  {maxWidth:430,margin:"0 auto",minHeight:"100vh",background:"#f0f4f8",position:"relative",paddingBottom:72},
+  app:  {maxWidth:430,margin:"0 auto",minHeight:"100vh",background:"var(--bg)",position:"relative",paddingBottom:72},
   hdr:  c=>({background:c,padding:"16px 20px 14px",color:"white"}),
-  card: {background:"white",borderRadius:14,padding:16,marginBottom:12,boxShadow:"0 1px 6px rgba(0,0,0,0.08)"},
+  card: {background:"var(--card-bg)",color:"var(--text)",borderRadius:14,padding:16,marginBottom:12,boxShadow:"0 1px 6px rgba(0,0,0,0.08)"},
   btn:  (c,l)=>({background:l?`${c}18`:c,color:l?c:"white",border:l?`1.5px solid ${c}`:"none",borderRadius:10,padding:"11px 16px",fontWeight:"bold",fontSize:14,cursor:"pointer",width:"100%",marginTop:8,display:"block"}),
-  inp:  {width:"100%",border:"1.5px solid #e2e8f0",borderRadius:10,padding:"10px 13px",fontSize:14,background:"white",marginBottom:4},
-  lbl:  {fontSize:12,color:"#718096",marginBottom:5,display:"block",marginTop:12},
+  inp:  {width:"100%",border:"1.5px solid var(--border)",borderRadius:10,padding:"10px 13px",fontSize:14,background:"var(--input-bg)",color:"var(--text)",marginBottom:4},
+  lbl:  {fontSize:12,color:"var(--text-soft)",marginBottom:5,display:"block",marginTop:12},
   ovr:  {position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"},
-  sht:  {background:"white",borderRadius:"18px 18px 0 0",padding:"20px 20px 36px",width:"100%",maxWidth:430,maxHeight:"92vh",overflowY:"auto"},
-  nav:  {position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:500},
+  sht:  {background:"var(--card-bg)",color:"var(--text)",borderRadius:"18px 18px 0 0",padding:"20px 20px 36px",width:"100%",maxWidth:430,maxHeight:"92vh",overflowY:"auto"},
+  nav:  {position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"var(--card-bg)",borderTop:"1px solid var(--border)",display:"flex",zIndex:500},
   nvb:  (a,c)=>({flex:1,padding:"10px 0 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:a?c:"#a0aec0"}),
   bdg:  c=>({background:`${c}18`,color:c,borderRadius:20,padding:"3px 9px",fontSize:12,fontWeight:"bold",display:"inline-block"}),
-  row:  {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f4f4f4"},
+  row:  {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--border)"},
 };
 
 // ── MAPA ──────────────────────────────────────────────────
@@ -163,8 +175,8 @@ function MapaLeaflet({paradas,posGPS}){
         className:"",iconSize:[38,38],iconAnchor:[19,19],popupAnchor:[0,-22]
       });
       let popHtml=`<div style="min-width:220px;font-family:system-ui"><div style="background:${t.color};color:white;padding:8px 12px;margin:-13px -19px 10px;border-radius:4px 4px 0 0;font-weight:bold">#${idx+1} ${t.icon} ${p.nombre}</div><div style="font-size:12px;color:#555;margin-bottom:6px">${t.label}${p.horaLlegada?" · 🕐 Llega "+p.horaLlegada:""}${p.horaSalida?" · Sale "+p.horaSalida:""}</div>${p.descripcion?`<div style="font-size:13px;color:#333;margin-bottom:6px">${p.descripcion}</div>`:""}${p.kmDesdeAnterior?`<div style="font-size:11px;color:#888">📏 ${p.kmDesdeAnterior}${p.tiempoManejo?" · ⏱ "+p.tiempoManejo:""}</div>`:""}`;
-      if(p.alojamientos?.length){popHtml+=`<div style="margin-top:6px;font-weight:bold;font-size:12px">🏨 Hospedaje:</div>`;p.alojamientos.forEach(a=>{popHtml+=`<div style="font-size:12px;padding:2px 0"><b>${a.nombre}</b> · <span style="color:#38a169">${a.precio}</span></div>`;});}
-      if(p.restaurantes?.length){popHtml+=`<div style="margin-top:6px;font-weight:bold;font-size:12px">🍽️ Comer:</div>`;p.restaurantes.forEach(r=>{popHtml+=`<div style="font-size:12px;padding:2px 0"><b>${r.nombre}</b> · <span style="color:#ed8936">${r.precio}</span></div>`;});}
+      if(p.alojamientos?.length){popHtml+=`<div style="margin-top:6px;font-weight:bold;font-size:12px">🏨 Hospedaje (sugerido por IA — verificar):</div>`;p.alojamientos.forEach(a=>{popHtml+=`<div style="font-size:12px;padding:2px 0"><b>${a.nombre}</b> · <span style="color:#38a169">${a.precio}</span></div>`;});}
+      if(p.restaurantes?.length){popHtml+=`<div style="margin-top:6px;font-weight:bold;font-size:12px">🍽️ Comer (sugerido por IA — verificar):</div>`;p.restaurantes.forEach(r=>{popHtml+=`<div style="font-size:12px;padding:2px 0"><b>${r.nombre}</b> · <span style="color:#ed8936">${r.precio}</span></div>`;});}
       popHtml+=`<a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" style="display:block;margin-top:8px;background:#2b6cb0;color:white;text-align:center;padding:7px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:bold">🧭 Navegar</a></div>`;
       L.marker([p.lat,p.lng],{icon:ico}).bindPopup(popHtml,{maxWidth:260}).addTo(_ml);
       bounds.push([p.lat,p.lng]);
@@ -189,56 +201,66 @@ function MapaLeaflet({paradas,posGPS}){
 }
 
 // ── COMPONENTE PARADA (timeline + editar + navegar) ───────
-function Parada({p,isLast,onEliminar,clave,completada,onCompletar,modoViaje}){
-  const [open,setOpen]=useState(false);
+function Parada({p,isLast,isFirst,onEliminar,onEditar,onMover,clave,completada,onCompletar,modoViaje}){
+  const [openA,setOpenA]=useState(false);
+  const [openR,setOpenR]=useState(false);
   const t=TIPOS[p.tipo]||TIPOS.turistico;
   return(
     <div style={{display:"flex",gap:0,marginBottom:0,opacity:completada?0.5:1}} className="fade-in">
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",width:40,flexShrink:0}}>
         <div style={{background:completada?"#a0aec0":t.color,color:"white",borderRadius:"50%",width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,zIndex:1,border:"2px solid white",boxShadow:"0 2px 6px rgba(0,0,0,0.2)"}}>{completada?"✓":t.icon}</div>
-        {!isLast&&<div style={{width:2,flex:1,background:"#e2e8f0",marginTop:4,marginBottom:4,minHeight:20}}/>}
+        {!isLast&&<div style={{width:2,flex:1,background:"var(--border)",marginTop:4,marginBottom:4,minHeight:20}}/>}
       </div>
       <div style={{flex:1,paddingLeft:12,paddingBottom:16,paddingTop:2}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:4}}>
-          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,textDecoration:completada?"line-through":"none"}}>{p.nombre}</div>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14,textDecoration:completada?"line-through":"none"}}>{p.nombre}</div>
           <div style={{display:"flex",gap:4,alignItems:"center"}}>
             {p.horaLlegada&&<div style={{background:`${t.color}18`,color:t.color,borderRadius:8,padding:"2px 8px",fontSize:12,fontWeight:"bold"}}>🕐 {p.horaLlegada}</div>}
-            {onEliminar&&<button onClick={()=>onEliminar(clave)} style={{background:"none",border:"none",color:"#fc8181",cursor:"pointer",fontSize:16,padding:"0 4px"}}>✕</button>}
+            {onEliminar&&<button onClick={()=>onEliminar(clave)} aria-label="Eliminar parada" style={{background:"none",border:"none",color:"#fc8181",cursor:"pointer",fontSize:16,padding:"0 4px"}}>✕</button>}
           </div>
         </div>
-        <div style={{fontSize:12,color:"#718096",marginTop:2}}>{t.label}{p.horaSalida?` · Sale: ${p.horaSalida}`:""}{p.duracion?` · ${p.duracion}`:""}</div>
+        <div style={{fontSize:12,color:"var(--text-soft)",marginTop:2}}>{t.label}{p.horaSalida?` · Sale: ${p.horaSalida}`:""}{p.duracion?` · ${p.duracion}`:""}</div>
         {(p.kmDesdeAnterior||p.tiempoManejo)&&<div style={{fontSize:11,color:"#a0aec0",marginTop:2}}>📏 {p.kmDesdeAnterior||""}{p.tiempoManejo?` · ⏱ ${p.tiempoManejo}`:""}</div>}
-        {p.descripcion&&<div style={{fontSize:13,color:"#4a5568",marginTop:4,lineHeight:1.4}}>{p.descripcion}</div>}
+        {p.descripcion&&<div style={{fontSize:13,color:"var(--text)",marginTop:4,lineHeight:1.4}}>{p.descripcion}</div>}
         <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
           {p.lat&&p.lng&&<button onClick={()=>navegarA(p.lat,p.lng,p.nombre)} style={{background:"#2b6cb018",color:"#2b6cb0",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold"}}>🧭 Navegar</button>}
+          {onEditar&&<button onClick={()=>onEditar(clave)} aria-label="Editar parada" style={{background:"#80568018",color:"#805ad5",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold"}}>✏️ Editar</button>}
+          {onMover&&<button onClick={()=>onMover(clave,-1)} disabled={isFirst} aria-label="Mover parada arriba" style={{background:"#71809618",color:"#4a5568",border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,cursor:isFirst?"default":"pointer",fontWeight:"bold",opacity:isFirst?0.35:1}}>⬆️</button>}
+          {onMover&&<button onClick={()=>onMover(clave,1)} disabled={isLast} aria-label="Mover parada abajo" style={{background:"#71809618",color:"#4a5568",border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,cursor:isLast?"default":"pointer",fontWeight:"bold",opacity:isLast?0.35:1}}>⬇️</button>}
           {modoViaje&&!completada&&onCompletar&&<button onClick={()=>onCompletar(clave)} style={{background:"#38a16918",color:"#276749",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold"}}>✅ Ya llegué</button>}
         </div>
         {p.alojamientos?.length>0&&(
           <div style={{marginTop:8}}>
-            <button onClick={()=>setOpen(o=>!o)} style={{background:"#2d374818",color:"#2d3748",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold",width:"100%",textAlign:"left"}}>🏨 {open?"Ocultar":"Ver"} hospedajes ({p.alojamientos.length}) {open?"▲":"▼"}</button>
-            {open&&p.alojamientos.map((a,i)=>(
+            <button onClick={()=>setOpenA(o=>!o)} style={{background:"#2d374818",color:"#2d3748",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold",width:"100%",textAlign:"left"}}>🏨 {openA?"Ocultar":"Ver"} hospedajes ({p.alojamientos.length}) {openA?"▲":"▼"}</button>
+            {openA&&(<>
+            <div style={{fontSize:10,color:"#a0aec0",marginTop:4}}>⚠️ Sugerencias de IA — verificá disponibilidad y precio real</div>
+            {p.alojamientos.map((a,i)=>(
               <div key={i} style={{marginTop:6,padding:10,background:i===0?"#f0fff4":i===1?"#fffbeb":"#f7fafc",borderRadius:10,border:`1px solid ${i===0?"#9ae6b4":i===1?"#f6e05e":"#e2e8f0"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
-                  <span style={{fontWeight:"bold",fontSize:13}}>{a.nombre}</span>
+                  <span style={{fontWeight:"bold",fontSize:13,color:"#2d3748"}}>{a.nombre}</span>
                   <span style={{fontSize:12,fontWeight:"bold",color:i===0?"#276749":i===1?"#744210":"#4a5568"}}>{i===0?"💚":i===1?"💛":"💜"} {a.precio}</span>
                 </div>
                 <div style={{fontSize:12,color:"#4a5568",marginTop:3}}>{a.descripcion}</div>
               </div>
             ))}
+            </>)}
           </div>
         )}
         {p.restaurantes?.length>0&&(
           <div style={{marginTop:8}}>
-            <button onClick={()=>setOpen(o=>!o)} style={{background:"#ed893618",color:"#c05621",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold",width:"100%",textAlign:"left"}}>🍽️ {open?"Ocultar":"Ver"} dónde comer ({p.restaurantes.length}) {open?"▲":"▼"}</button>
-            {open&&p.restaurantes.map((r,i)=>(
+            <button onClick={()=>setOpenR(o=>!o)} style={{background:"#ed893618",color:"#c05621",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold",width:"100%",textAlign:"left"}}>🍽️ {openR?"Ocultar":"Ver"} dónde comer ({p.restaurantes.length}) {openR?"▲":"▼"}</button>
+            {openR&&(<>
+            <div style={{fontSize:10,color:"#a0aec0",marginTop:4}}>⚠️ Sugerencias de IA — verificá disponibilidad y precio real</div>
+            {p.restaurantes.map((r,i)=>(
               <div key={i} style={{marginTop:6,padding:10,background:i===0?"#fff7ed":i===1?"#fffbeb":"#f7fafc",borderRadius:10,border:`1px solid ${i===0?"#fed7aa":i===1?"#f6e05e":"#e2e8f0"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
-                  <span style={{fontWeight:"bold",fontSize:13}}>{r.nombre}</span>
+                  <span style={{fontWeight:"bold",fontSize:13,color:"#2d3748"}}>{r.nombre}</span>
                   <span style={{fontSize:12,fontWeight:"bold",color:"#c05621"}}>{i===0?"💚":i===1?"💛":"💜"} {r.precio}</span>
                 </div>
                 <div style={{fontSize:12,color:"#4a5568",marginTop:3}}>{r.descripcion}</div>
               </div>
             ))}
+            </>)}
           </div>
         )}
       </div>
@@ -247,12 +269,12 @@ function Parada({p,isLast,onEliminar,clave,completada,onCompletar,modoViaje}){
 }
 
 // ── MODALES ───────────────────────────────────────────────
-function ModalViaje({fV,setFV,onCrear,onCerrar}){
+function ModalViaje({fV,setFV,onCrear,onCerrar,editando}){
   return(
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
-        <div style={{fontWeight:"bold",fontSize:19,color:"#2d3748"}}>🚗 Planificar Viaje</div>
-        <div style={{fontSize:13,color:"#718096",marginBottom:8}}>La IA genera itinerarios con horarios, atracciones, restaurantes y hospedaje</div>
+        <div style={{fontWeight:"bold",fontSize:19,color:"var(--text)"}}>{editando?"✏️ Editar Viaje":"🚗 Planificar Viaje"}</div>
+        <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:8}}>{editando?"Estos cambios no regeneran el itinerario ya creado. Si cambiás fechas o destino, revisá el itinerario después.":"La IA genera itinerarios con horarios, atracciones, restaurantes y hospedaje"}</div>
         <label style={S.lbl}>📍 Ciudad de origen *</label>
         <input style={S.inp} placeholder="Ej: San Miguel de Tucumán" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
         <label style={S.lbl}>🏁 Ciudad de destino *</label>
@@ -271,12 +293,12 @@ function ModalViaje({fV,setFV,onCrear,onCerrar}){
         <div style={{display:"flex",gap:8,marginBottom:6}}>
           {[1,2,3,4].map(h=>(
             <button key={h} onClick={()=>setFV(p=>({...p,buffer:h}))}
-              style={{background:(fV.buffer||3)===h?"#2b6cb0":"white",color:(fV.buffer||3)===h?"white":"#4a5568",border:"1.5px solid #e2e8f0",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontWeight:"bold",fontSize:14,flex:1}}>{h}hs</button>
+              style={{background:(fV.buffer||3)===h?"#2b6cb0":"var(--input-bg)",color:(fV.buffer||3)===h?"white":"var(--text)",border:"1.5px solid var(--border)",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontWeight:"bold",fontSize:14,flex:1}}>{h}hs</button>
           ))}
         </div>
         <label style={S.lbl}>📝 Preferencias (opcional)</label>
         <textarea style={{...S.inp,height:70,resize:"none"}} placeholder="Ej: Viajamos con niños, preferimos hospedaje económico..." value={fV.notas} onChange={e=>setFV(p=>({...p,notas:e.target.value}))}/>
-        <button style={S.btn("#2b6cb0")} onClick={onCrear}>🤖 Generar opciones con IA</button>
+        <button style={S.btn("#2b6cb0")} onClick={onCrear}>{editando?"💾 Guardar cambios":"🤖 Generar opciones con IA"}</button>
         <button style={S.btn("#718096",true)} onClick={onCerrar}>Cancelar</button>
       </div>
     </div>
@@ -287,9 +309,9 @@ function ModalGasto({fG,setFG,onAgregar,onCerrar}){
   return(
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
-        <div style={{fontWeight:"bold",fontSize:19,marginBottom:12,color:"#2d3748"}}>💰 Agregar Gasto</div>
+        <div style={{fontWeight:"bold",fontSize:19,marginBottom:12,color:"var(--text)"}}>💰 Agregar Gasto</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-          {Object.entries(CATS).map(([k,c])=>(<button key={k} onClick={()=>setFG(p=>({...p,cat:k}))} style={{background:fG.cat===k?c.color:"white",color:fG.cat===k?"white":"#4a5568",border:`1.5px solid ${fG.cat===k?c.color:"#e2e8f0"}`,borderRadius:10,padding:"10px 8px",cursor:"pointer",fontSize:13,fontWeight:fG.cat===k?"bold":"normal"}}>{c.icon} {c.label}</button>))}
+          {Object.entries(CATS).map(([k,c])=>(<button key={k} onClick={()=>setFG(p=>({...p,cat:k}))} style={{background:fG.cat===k?c.color:"var(--input-bg)",color:fG.cat===k?"white":"var(--text)",border:`1.5px solid ${fG.cat===k?c.color:"var(--border)"}`,borderRadius:10,padding:"10px 8px",cursor:"pointer",fontSize:13,fontWeight:fG.cat===k?"bold":"normal"}}>{c.icon} {c.label}</button>))}
         </div>
         <label style={{...S.lbl,marginTop:4}}>Descripción (opcional)</label>
         <input style={S.inp} placeholder="Ej: Almuerzo" value={fG.desc} onChange={e=>setFG(p=>({...p,desc:e.target.value}))}/>
@@ -308,8 +330,8 @@ function ModalNafta({fN,setFN,onAgregarComoGasto,onCerrar}){
   return(
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
-        <div style={{fontWeight:"bold",fontSize:19,color:"#2d3748"}}>⛽ Calculadora de Nafta</div>
-        <div style={{fontSize:13,color:"#718096",marginBottom:8}}>Estimá el costo de combustible</div>
+        <div style={{fontWeight:"bold",fontSize:19,color:"var(--text)"}}>⛽ Calculadora de Nafta</div>
+        <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:8}}>Estimá el costo de combustible</div>
         <label style={{...S.lbl,marginTop:4}}>Kilómetros a recorrer</label>
         <input style={S.inp} type="number" placeholder="Ej: 280" value={fN.km} onChange={e=>setFN(p=>({...p,km:e.target.value}))}/>
         <label style={S.lbl}>Rendimiento (km por litro)</label>
@@ -330,26 +352,36 @@ function ModalNafta({fN,setFN,onAgregarComoGasto,onCerrar}){
   );
 }
 
-function ModalAgregarParada({onAgregar,onCerrar}){
+function ModalAgregarParada({opcionSel,onAgregar,onCerrar}){
+  const dias=opcionSel?.dias||[];
   const [f,setF]=useState({nombre:"",tipo:"turistico",horaLlegada:"",descripcion:""});
+  const [diaSel,setDiaSel]=useState(Math.max(0,dias.length-1));
   const [buscando,setBuscando]=useState(false);
   const agregar=async()=>{
     if(!f.nombre) return;
     setBuscando(true);
     const coord=await geocodeNominatim(f.nombre+", Argentina");
     setBuscando(false);
-    onAgregar({...f,lat:coord?.lat,lng:coord?.lng,alojamientos:[],restaurantes:[]});
+    onAgregar({...f,lat:coord?.lat,lng:coord?.lng,alojamientos:[],restaurantes:[]},diaSel);
   };
   return(
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
-        <div style={{fontWeight:"bold",fontSize:19,marginBottom:12,color:"#2d3748"}}>➕ Agregar Parada Propia</div>
-        <label style={{...S.lbl,marginTop:0}}>Nombre del lugar *</label>
+        <div style={{fontWeight:"bold",fontSize:19,marginBottom:12,color:"var(--text)"}}>➕ Agregar Parada Propia</div>
+        {dias.length>1&&(<>
+          <label style={{...S.lbl,marginTop:0}}>Agregar al día</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
+            {dias.map((d,i)=>(
+              <button key={i} onClick={()=>setDiaSel(i)} style={{background:diaSel===i?"#38a169":"var(--input-bg)",color:diaSel===i?"white":"var(--text)",border:`1.5px solid ${diaSel===i?"#38a169":"var(--border)"}`,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:"bold"}}>Día {d.dia}</button>
+            ))}
+          </div>
+        </>)}
+        <label style={{...S.lbl,marginTop:dias.length>1?0:0}}>Nombre del lugar *</label>
         <input style={S.inp} placeholder="Ej: Dique El Jumeal" value={f.nombre} onChange={e=>setF(p=>({...p,nombre:e.target.value}))}/>
         <label style={S.lbl}>Tipo de parada</label>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:4}}>
           {Object.entries(TIPOS).filter(([k])=>k!=="origen"&&k!=="destino").map(([k,t])=>(
-            <button key={k} onClick={()=>setF(p=>({...p,tipo:k}))} style={{background:f.tipo===k?t.color:"white",color:f.tipo===k?"white":"#4a5568",border:`1.5px solid ${f.tipo===k?t.color:"#e2e8f0"}`,borderRadius:8,padding:"8px",cursor:"pointer",fontSize:13}}>{t.icon} {t.label}</button>
+            <button key={k} onClick={()=>setF(p=>({...p,tipo:k}))} style={{background:f.tipo===k?t.color:"var(--input-bg)",color:f.tipo===k?"white":"var(--text)",border:`1.5px solid ${f.tipo===k?t.color:"var(--border)"}`,borderRadius:8,padding:"8px",cursor:"pointer",fontSize:13}}>{t.icon} {t.label}</button>
           ))}
         </div>
         <label style={S.lbl}>Hora de llegada (opcional)</label>
@@ -363,28 +395,64 @@ function ModalAgregarParada({onAgregar,onCerrar}){
   );
 }
 
+function ModalEditarParada({f,setF,onGuardar,onCerrar}){
+  return(
+    <div style={S.ovr} onClick={onCerrar}>
+      <div style={S.sht} onClick={e=>e.stopPropagation()}>
+        <div style={{fontWeight:"bold",fontSize:19,marginBottom:12,color:"var(--text)"}}>✏️ Editar Parada</div>
+        <label style={{...S.lbl,marginTop:0}}>Nombre</label>
+        <input style={S.inp} value={f.nombre} onChange={e=>setF(p=>({...p,nombre:e.target.value}))}/>
+        <label style={S.lbl}>Tipo de parada</label>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:4}}>
+          {Object.entries(TIPOS).filter(([k])=>k!=="origen"&&k!=="destino").map(([k,t])=>(
+            <button key={k} onClick={()=>setF(p=>({...p,tipo:k}))} style={{background:f.tipo===k?t.color:"var(--input-bg)",color:f.tipo===k?"white":"var(--text)",border:`1.5px solid ${f.tipo===k?t.color:"var(--border)"}`,borderRadius:8,padding:"8px",cursor:"pointer",fontSize:13}}>{t.icon} {t.label}</button>
+          ))}
+        </div>
+        <label style={S.lbl}>Hora de llegada</label>
+        <input style={S.inp} type="time" value={f.horaLlegada} onChange={e=>setF(p=>({...p,horaLlegada:e.target.value}))}/>
+        <label style={S.lbl}>Hora de salida</label>
+        <input style={S.inp} type="time" value={f.horaSalida} onChange={e=>setF(p=>({...p,horaSalida:e.target.value}))}/>
+        <label style={S.lbl}>Duración</label>
+        <input style={S.inp} placeholder="Ej: 1h 30m" value={f.duracion} onChange={e=>setF(p=>({...p,duracion:e.target.value}))}/>
+        <label style={S.lbl}>Descripción</label>
+        <textarea style={{...S.inp,height:70,resize:"none"}} value={f.descripcion} onChange={e=>setF(p=>({...p,descripcion:e.target.value}))}/>
+        <button style={S.btn("#2b6cb0")} onClick={onGuardar}>💾 Guardar cambios</button>
+        <button style={S.btn("#718096",true)} onClick={onCerrar}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 // ── PANTALLAS ─────────────────────────────────────────────
-function PantallaConfig({apiKey,setApiKey}){
+function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
   const [tmp,setTmp]=useState(apiKey);
   const [ok,setOk]=useState(false);
   const guardar=()=>{const k=tmp.trim();setApiKey(k);LS.set("apiKey",k);setOk(true);setTimeout(()=>setOk(false),2500);};
   return(
     <div>
       <div style={S.hdr("#4a5568")}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Config</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v6.1</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Config</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v{VERSION}</div></div>
         <div style={{fontSize:13,opacity:.8}}>Configuración guardada en tu celular</div>
       </div>
       <div style={{padding:16}}>
         <div style={S.card}>
-          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:15,marginBottom:8}}>🤖 API Key de Groq (gratis)</div>
-          <div style={{fontSize:13,color:"#718096",marginBottom:12,lineHeight:1.6}}>Se guarda en tu celular, no la volvés a ingresar.<br/>📌 Conseguila en: <strong>console.groq.com</strong></div>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>🤖 API Key de Groq (gratis)</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong></div>
           {apiKey&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Clave guardada — IA lista</div>}
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
         </div>
         <div style={S.card}>
-          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:8}}>🔔 Notificaciones</div>
-          <div style={{fontSize:13,color:"#718096",marginBottom:10}}>Activá las notificaciones para recibir alertas del tiempo de devolución aunque la app esté cerrada.</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14}}>{darkMode?"🌙 Modo oscuro":"☀️ Modo claro"}</div>
+            <button onClick={()=>setDarkMode(d=>!d)} aria-label="Cambiar entre modo claro y oscuro" style={{background:darkMode?"#2b6cb0":"#e2e8f0",border:"none",borderRadius:20,width:52,height:28,cursor:"pointer",position:"relative",flexShrink:0}}>
+              <div style={{position:"absolute",top:3,left:darkMode?27:3,width:22,height:22,borderRadius:"50%",background:"white",transition:"left .2s"}}/>
+            </button>
+          </div>
+        </div>
+        <div style={S.card}>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14,marginBottom:8}}>🔔 Notificaciones</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:10}}>Activá las notificaciones para recibir alertas del tiempo de devolución aunque la app esté cerrada.</div>
           <button style={S.btn("#805ad5",true)} onClick={()=>{
             if("Notification" in window){
               Notification.requestPermission().then(p=>{
@@ -394,7 +462,7 @@ function PantallaConfig({apiKey,setApiKey}){
           }}>🔔 Activar notificaciones</button>
         </div>
         <div style={S.card}>
-          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:8}}>🔄 Forzar actualización</div>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14,marginBottom:8}}>🔄 Forzar actualización</div>
           <button style={S.btn("#e53e3e",true)} onClick={()=>{
             if('serviceWorker' in navigator){
               navigator.serviceWorker.getRegistrations().then(regs=>{
@@ -413,7 +481,7 @@ function CardClima({clima,viaje}){
   if(!clima?.time?.length) return null;
   return(
     <div style={S.card}>
-      <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:10}}>🌦️ Clima en {viaje.destino}</div>
+      <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14,marginBottom:10}}>🌦️ Clima en {viaje.destino}</div>
       <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
         {clima.time.map((dia,i)=>(
           <div key={i} style={{minWidth:80,textAlign:"center",background:"#f7fafc",borderRadius:10,padding:"10px 8px",flexShrink:0}}>
@@ -436,21 +504,21 @@ function CardEquipaje({equipaje,setEquipaje}){
   return(
     <div style={S.card}>
       <div onClick={()=>setAbierto(a=>!a)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
-        <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14}}>🎒 Lista de equipaje {pendientes>0&&<span style={S.bdg("#e53e3e")}>{pendientes} pendientes</span>}</div>
+        <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14}}>🎒 Lista de equipaje {pendientes>0&&<span style={S.bdg("#e53e3e")}>{pendientes} pendientes</span>}</div>
         <span style={{color:"#a0aec0"}}>{abierto?"▲":"▼"}</span>
       </div>
       {abierto&&(
         <div style={{marginTop:10}} className="fade-in">
           {equipaje.map(item=>(
-            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid #f4f4f4"}}>
-              <button onClick={()=>setEquipaje(p=>p.map(e=>e.id===item.id?{...e,ok:!e.ok}:e))} style={{width:24,height:24,borderRadius:6,border:`2px solid ${item.ok?"#38a169":"#cbd5e0"}`,background:item.ok?"#38a169":"white",color:"white",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{item.ok?"✓":""}</button>
-              <span style={{fontSize:14,color:item.ok?"#a0aec0":"#2d3748",textDecoration:item.ok?"line-through":"none",flex:1}}>{item.texto}</span>
-              <button onClick={()=>setEquipaje(p=>p.filter(e=>e.id!==item.id))} style={{background:"none",border:"none",color:"#fc8181",cursor:"pointer",fontSize:15}}>✕</button>
+            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid var(--border)"}}>
+              <button onClick={()=>setEquipaje(p=>p.map(e=>e.id===item.id?{...e,ok:!e.ok}:e))} aria-label="Marcar item de equipaje" style={{width:24,height:24,borderRadius:6,border:`2px solid ${item.ok?"#38a169":"#cbd5e0"}`,background:item.ok?"#38a169":"white",color:"white",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{item.ok?"✓":""}</button>
+              <span style={{fontSize:14,color:item.ok?"#a0aec0":"var(--text)",textDecoration:item.ok?"line-through":"none",flex:1}}>{item.texto}</span>
+              <button onClick={()=>setEquipaje(p=>p.filter(e=>e.id!==item.id))} aria-label="Eliminar item de equipaje" style={{background:"none",border:"none",color:"#fc8181",cursor:"pointer",fontSize:15}}>✕</button>
             </div>
           ))}
           <div style={{display:"flex",gap:8,marginTop:10}}>
             <input style={{...S.inp,marginBottom:0,flex:1}} placeholder="Agregar item..." value={nuevo} onChange={e=>setNuevo(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&nuevo.trim()){setEquipaje(p=>[...p,{id:Date.now(),texto:nuevo.trim(),ok:false}]);setNuevo("");}}}/>
-            <button onClick={()=>{if(nuevo.trim()){setEquipaje(p=>[...p,{id:Date.now(),texto:nuevo.trim(),ok:false}]);setNuevo("");}}} style={{background:"#38a169",color:"white",border:"none",borderRadius:10,padding:"0 16px",cursor:"pointer",fontWeight:"bold"}}>+</button>
+            <button onClick={()=>{if(nuevo.trim()){setEquipaje(p=>[...p,{id:Date.now(),texto:nuevo.trim(),ok:false}]);setNuevo("");}}} aria-label="Agregar item de equipaje" style={{background:"#38a169",color:"white",border:"none",borderRadius:10,padding:"0 16px",cursor:"pointer",fontWeight:"bold"}}>+</button>
           </div>
         </div>
       )}
@@ -476,7 +544,7 @@ function CardProximaParada({opcionSel,completadas,onCompletar}){
       <div style={{display:"flex",gap:12,alignItems:"center"}}>
         <div style={{background:t.color,color:"white",borderRadius:"50%",width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{t.icon}</div>
         <div style={{flex:1}}>
-          <div style={{fontWeight:"bold",color:"#2d3748",fontSize:16}}>{proxima.nombre}</div>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:16}}>{proxima.nombre}</div>
           <div style={{fontSize:12,color:"#718096"}}>{t.label}{proxima.horaLlegada?` · 🕐 ${proxima.horaLlegada}`:""}{proxima.kmDesdeAnterior?` · 📏 ${proxima.kmDesdeAnterior}`:""}</div>
         </div>
       </div>
@@ -489,15 +557,15 @@ function CardProximaParada({opcionSel,completadas,onCompletar}){
   );
 }
 
-function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pct,alerta,opcionSel,historial,clima,equipaje,setEquipaje,completadas,onCompletar,onNuevo,onIniciar,onFinalizar,onCompartir,setTab,onReintentar}){
+function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pct,alerta,opcionSel,historial,clima,equipaje,setEquipaje,completadas,onCompletar,onNuevo,onEditarViaje,onIniciar,onFinalizar,onCompartir,setTab,onReintentar}){
   return(
     <div>
       <div style={S.hdr("#2b6cb0")}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v6.1</div>
-            <button onClick={()=>setTab("config")} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:16}}>⚙️</button>
+            <div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v{VERSION}</div>
+            <button onClick={()=>setTab("config")} aria-label="Abrir configuración" style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:16}}>⚙️</button>
           </div>
         </div>
         <div style={{fontSize:13,opacity:.8}}>Planificador inteligente de viajes</div>
@@ -506,8 +574,8 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
         {!viaje?(
           <div style={{...S.card,textAlign:"center",padding:36}}>
             <div style={{fontSize:54}}>🗺️</div>
-            <div style={{fontSize:19,fontWeight:"bold",color:"#2d3748",marginTop:14}}>¡Planificá tu próximo viaje!</div>
-            <div style={{color:"#718096",fontSize:14,margin:"10px 0 16px"}}>Itinerario completo hora por hora con atracciones, restaurantes y hospedaje</div>
+            <div style={{fontSize:19,fontWeight:"bold",color:"var(--text)",marginTop:14}}>¡Planificá tu próximo viaje!</div>
+            <div style={{color:"var(--text-soft)",fontSize:14,margin:"10px 0 16px"}}>Itinerario completo hora por hora con atracciones, restaurantes y hospedaje</div>
             {!apiKey?(
               <div style={{background:"#fffbeb",border:"1px solid #f6e05e",borderRadius:12,padding:14,marginBottom:14}}>
                 <div style={{fontSize:14,fontWeight:"bold",color:"#744210"}}>⚙️ Primero configurá tu API Key</div>
@@ -520,7 +588,8 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
           </div>
         ):(
           <>
-            <div style={{...S.card,background:"linear-gradient(135deg,#1a365d,#2b6cb0)",color:"white"}}>
+            <div style={{...S.card,background:"linear-gradient(135deg,#1a365d,#2b6cb0)",color:"white",position:"relative"}}>
+              {estado!=="viajando"&&<button onClick={onEditarViaje} aria-label="Editar datos del viaje" style={{position:"absolute",top:12,right:12,background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"4px 10px",color:"white",cursor:"pointer",fontSize:12,fontWeight:"bold"}}>✏️ Editar</button>}
               <div style={{fontSize:11,opacity:.8,textTransform:"uppercase",letterSpacing:1}}>{estado==="viajando"?"🚦 EN VIAJE":"✈️ VIAJE PLANIFICADO"}</div>
               <div style={{fontSize:20,fontWeight:"bold",marginTop:6}}>📍 {viaje.origen}</div>
               <div style={{fontSize:16,opacity:.9,marginTop:2}}>→ {viaje.destino}</div>
@@ -532,7 +601,7 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
               <>
                 {alerta&&<div style={{background:"#fed7d7",border:"2px solid #e53e3e",borderRadius:12,padding:14,marginBottom:12,textAlign:"center"}}><div style={{fontWeight:"bold",color:"#c53030"}}>⚠️ ¡Menos de 3 horas para devolver!</div></div>}
                 <div style={{...S.card,textAlign:"center"}}>
-                  <div style={{fontSize:12,color:"#718096"}}>⏱ Tiempo restante</div>
+                  <div style={{fontSize:12,color:"var(--text-soft)"}}>⏱ Tiempo restante</div>
                   <div style={{fontSize:38,fontWeight:"bold",color:pct>80?"#e53e3e":"#2b6cb0",margin:"6px 0"}}>{tRest||"..."}</div>
                   <div style={{background:"#e2e8f0",borderRadius:8,height:10,overflow:"hidden"}}>
                     <div style={{background:pct>80?"#e53e3e":"#2b6cb0",height:"100%",width:`${pct}%`,borderRadius:8,transition:"width .5s"}}/>
@@ -584,11 +653,11 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
   );
 }
 
-function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItinerario,loadingDetalle,onEliminarParada,onAbrirAgregarParada,onCompartir}){
+function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItinerario,loadingDetalle,onEliminarParada,onEditarParada,onMoverParada,onAbrirAgregarParada,onCompartir}){
   const [expandido,setExpandido]=useState(null);
-  if(!viaje) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"#718096",marginTop:8}}>Creá un viaje en 🏠 Inicio</div></div></div></div>);
+  if(!viaje) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"var(--text-soft)",marginTop:8}}>Creá un viaje en 🏠 Inicio</div></div></div></div>);
   if(loadingIA) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44,animation:"spin 1s linear infinite"}}>🤖</div><div style={{fontWeight:"bold",marginTop:12}}>Generando...</div></div></div></div>);
-  if(!opciones?.length) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44}}>🗂️</div><div style={{fontWeight:"bold",marginTop:10}}>Sin opciones</div><div style={{fontSize:13,color:"#718096",marginTop:6}}>Generá en 🏠 Inicio</div></div></div></div>);
+  if(!opciones?.length) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44}}>🗂️</div><div style={{fontWeight:"bold",marginTop:10}}>Sin opciones</div><div style={{fontSize:13,color:"var(--text-soft)",marginTop:6}}>Generá en 🏠 Inicio</div></div></div></div>);
   const cols=["#2b6cb0","#38a169","#805ad5"];
   return(
     <div>
@@ -599,12 +668,12 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
           const c=cols[oi]||"#2b6cb0";
           const abierto=expandido===oi;
           return(
-            <div key={oi} style={{...S.card,border:`2px solid ${sel?c:"#e2e8f0"}`,background:sel?`${c}06`:"white",marginBottom:16}}>
+            <div key={oi} style={{...S.card,border:`2px solid ${sel?c:"var(--border)"}`,background:sel?`${c}06`:"var(--card-bg)",marginBottom:16}}>
               <div onClick={()=>setExpandido(abierto?null:oi)} style={{cursor:"pointer"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                   <div>
                     <div style={{fontWeight:"bold",fontSize:16,color:c}}>Opción {oi+1}: {op.nombre}</div>
-                    <div style={{fontSize:13,color:"#4a5568",marginTop:2}}>{op.descripcion}</div>
+                    <div style={{fontSize:13,color:"var(--text)",marginTop:2}}>{op.descripcion}</div>
                   </div>
                   <span style={{fontSize:18,color:"#a0aec0"}}>{abierto?"▲":"▼"}</span>
                 </div>
@@ -614,8 +683,8 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                 </div>
               </div>
               {abierto&&!sel&&(
-                <div style={{marginTop:12,borderTop:"1px solid #f4f4f4",paddingTop:12}} className="fade-in">
-                  {op.resumen&&<div style={{fontSize:13,color:"#4a5568",marginBottom:10,lineHeight:1.4}}>{op.resumen}</div>}
+                <div style={{marginTop:12,borderTop:"1px solid var(--border)",paddingTop:12}} className="fade-in">
+                  {op.resumen&&<div style={{fontSize:13,color:"var(--text)",marginBottom:10,lineHeight:1.4}}>{op.resumen}</div>}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
                     <div style={{background:"#f7fafc",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
                       <div style={{fontSize:11,color:"#718096"}}>📏 Distancia</div>
@@ -649,12 +718,12 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                     </div>
                   )}
                   <div style={{marginTop:12,padding:10,background:"#fffbeb",borderRadius:10,fontSize:12,color:"#744210"}}>
-                    💡 Al elegir esta ruta, la IA genera la hoja de ruta completa: descansos, dónde cargar combustible, lugares para conocer y el detalle en el mapa.
+                    💡 Al elegir esta ruta, la IA genera la hoja de ruta completa: descansos, dónde cargar combustible, lugares para conocer y el detalle en el mapa. Los nombres de hoteles/restaurantes/precios son sugerencias y conviene verificarlos.
                   </div>
                 </div>
               )}
               {sel&&opcionSel.dias&&abierto&&(
-                <div style={{marginTop:12,borderTop:"1px solid #f4f4f4",paddingTop:12}} className="fade-in">
+                <div style={{marginTop:12,borderTop:"1px solid var(--border)",paddingTop:12}} className="fade-in">
                   <div style={{display:"flex",gap:8,marginBottom:12}}>
                     <button onClick={onCompartir} style={{...S.btn("#25d366",true),flex:1,marginTop:0,padding:"8px",fontSize:13}}>📲 WhatsApp</button>
                     <button onClick={()=>onAbrirAgregarParada()} style={{...S.btn("#38a169",true),flex:1,marginTop:0,padding:"8px",fontSize:13}}>➕ Agregar parada</button>
@@ -665,7 +734,7 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                         <span>📅 Día {dia.dia}: {dia.titulo}</span>
                         {dia.kmDelDia&&<span style={{fontSize:12,opacity:.85}}>📏 {dia.kmDelDia} km</span>}
                       </div>
-                      {dia.paradas?.map((p,pi)=>(<Parada key={pi} p={p} isLast={pi===dia.paradas.length-1} clave={`${di}-${pi}`} onEliminar={onEliminarParada}/>))}
+                      {dia.paradas?.map((p,pi)=>(<Parada key={pi} p={p} isFirst={pi===0} isLast={pi===dia.paradas.length-1} clave={`${di}-${pi}`} onEliminar={onEliminarParada} onEditar={onEditarParada} onMover={onMoverParada}/>))}
                     </div>
                   ))}
                 </div>
@@ -705,6 +774,9 @@ function PantallaMapa({viaje,opcionSel,posGPS,estado}){
           </div>
           {/* Itinerario detallado */}
           <div style={{flex:1,overflowY:"auto",background:"#f7fafc",padding:"10px 12px"}}>
+            <div style={{background:"#fffbeb",border:"1px solid #f6e05e",borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:11,color:"#744210"}}>
+              ⚠️ Hospedajes, restaurantes y precios son sugerencias generadas por IA. Verificá disponibilidad y precio real antes de reservar.
+            </div>
             {opcionSel.presupuesto&&(
               <div style={{background:"white",borderRadius:14,padding:14,marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.08)",border:"2px solid #d69e2e"}}>
                 <div style={{fontWeight:"bold",color:"#2d3748",fontSize:14,marginBottom:10}}>💰 Presupuesto estimado del viaje</div>
@@ -779,21 +851,21 @@ function PantallaGastos({gastos,setGastos,pers,setPers,setModal}){
       <div style={S.hdr("#d69e2e")}><div style={{fontSize:22,fontWeight:"bold"}}>💰 Gastos</div><div style={{fontSize:13,opacity:.8}}>Total: {fmtM(total)}</div></div>
       <div style={{padding:16}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-          {Object.entries(CATS).map(([k,c])=>{const t=gastos.filter(g=>g.cat===k).reduce((s,g)=>s+g.monto,0);return(<div key={k} style={{...S.card,textAlign:"center",padding:12,marginBottom:0,borderLeft:`4px solid ${c.color}`}}><div style={{fontSize:22}}>{c.icon}</div><div style={{fontSize:12,color:"#718096",marginTop:2}}>{c.label}</div><div style={{fontSize:16,fontWeight:"bold",color:c.color}}>{fmtM(t)}</div></div>);})}
+          {Object.entries(CATS).map(([k,c])=>{const t=gastos.filter(g=>g.cat===k).reduce((s,g)=>s+g.monto,0);return(<div key={k} style={{...S.card,textAlign:"center",padding:12,marginBottom:0,borderLeft:`4px solid ${c.color}`}}><div style={{fontSize:22}}>{c.icon}</div><div style={{fontSize:12,color:"var(--text-soft)",marginTop:2}}>{c.label}</div><div style={{fontSize:16,fontWeight:"bold",color:c.color}}>{fmtM(t)}</div></div>);})}
         </div>
         <div style={S.card}>
-          <div style={{fontWeight:"bold",color:"#2d3748",marginBottom:10}}>👥 División por persona</div>
+          <div style={{fontWeight:"bold",color:"var(--text)",marginBottom:10}}>👥 División por persona</div>
           <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:10}}>
-            <span style={{fontSize:13,color:"#718096"}}>Personas:</span>
-            <button onClick={()=>setPers(p=>Math.max(1,p-1))} style={{width:32,height:32,borderRadius:16,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",fontWeight:"bold",fontSize:18}}>-</button>
-            <span style={{fontWeight:"bold",fontSize:20,minWidth:24,textAlign:"center"}}>{pers}</span>
-            <button onClick={()=>setPers(p=>p+1)} style={{width:32,height:32,borderRadius:16,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",fontWeight:"bold",fontSize:18}}>+</button>
+            <span style={{fontSize:13,color:"var(--text-soft)"}}>Personas:</span>
+            <button onClick={()=>setPers(p=>Math.max(1,p-1))} aria-label="Restar persona" style={{width:32,height:32,borderRadius:16,border:"1.5px solid var(--border)",background:"var(--input-bg)",color:"var(--text)",cursor:"pointer",fontWeight:"bold",fontSize:18}}>-</button>
+            <span style={{fontWeight:"bold",fontSize:20,minWidth:24,textAlign:"center",color:"var(--text)"}}>{pers}</span>
+            <button onClick={()=>setPers(p=>p+1)} aria-label="Sumar persona" style={{width:32,height:32,borderRadius:16,border:"1.5px solid var(--border)",background:"var(--input-bg)",color:"var(--text)",cursor:"pointer",fontWeight:"bold",fontSize:18}}>+</button>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid #f4f4f4"}}><span style={{color:"#718096",fontSize:14}}>Por persona:</span><span style={{fontWeight:"bold",color:"#d69e2e",fontSize:22}}>{fmtM(porPers)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid var(--border)"}}><span style={{color:"var(--text-soft)",fontSize:14}}>Por persona:</span><span style={{fontWeight:"bold",color:"#d69e2e",fontSize:22}}>{fmtM(porPers)}</span></div>
         </div>
         <button style={S.btn("#d69e2e")} onClick={()=>setModal("gasto")}>+ Agregar Gasto</button>
         <button style={S.btn("#d69e2e",true)} onClick={()=>setModal("nafta")}>⛽ Calculadora de Nafta</button>
-        {gastos.length>0&&(<div style={S.card}><div style={{fontWeight:"bold",marginBottom:8}}>📋 Gastos</div>{[...gastos].reverse().map(g=>(<div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f4f4f4"}}><div><span>{CATS[g.cat].icon} </span><span style={{fontSize:13}}>{g.desc||CATS[g.cat].label}</span><div style={{fontSize:11,color:"#a0aec0"}}>{g.fecha}</div></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontWeight:"bold",color:CATS[g.cat].color}}>{fmtM(g.monto)}</span><button onClick={()=>setGastos(p=>p.filter(x=>x.id!==g.id))} style={{background:"none",border:"none",color:"#fc8181",cursor:"pointer",fontSize:18}}>✕</button></div></div>))}</div>)}
+        {gastos.length>0&&(<div style={S.card}><div style={{fontWeight:"bold",marginBottom:8}}>📋 Gastos</div>{[...gastos].reverse().map(g=>(<div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--border)"}}><div><span>{CATS[g.cat].icon} </span><span style={{fontSize:13}}>{g.desc||CATS[g.cat].label}</span><div style={{fontSize:11,color:"#a0aec0"}}>{g.fecha}</div></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontWeight:"bold",color:CATS[g.cat].color}}>{fmtM(g.monto)}</span><button onClick={()=>setGastos(p=>p.filter(x=>x.id!==g.id))} aria-label="Eliminar gasto" style={{background:"none",border:"none",color:"#fc8181",cursor:"pointer",fontSize:18}}>✕</button></div></div>))}</div>)}
         {gastos.length===0&&<div style={{...S.card,textAlign:"center",padding:28,color:"#a0aec0"}}><div style={{fontSize:40}}>💸</div><div style={{marginTop:8}}>Sin gastos aún</div></div>}
       </div>
     </div>
@@ -812,18 +884,18 @@ function PantallaHistorial({historial,onEliminar}){
           return(
             <div key={h.id||i} style={S.card}>
               <div style={{fontWeight:"bold",fontSize:15}}>📍 {h.viaje?.origen} → {h.viaje?.destino}</div>
-              <div style={{fontSize:12,color:"#718096",marginTop:2}}>{fmtDs(h.viaje?.fRetiro)} · {h.viaje?.pers} pers{h.viaje?.auto?` · ${h.viaje.auto}`:""}</div>
+              <div style={{fontSize:12,color:"var(--text-soft)",marginTop:2}}>{fmtDs(h.viaje?.fRetiro)} · {h.viaje?.pers} pers{h.viaje?.auto?` · ${h.viaje.auto}`:""}</div>
               {h.opcionSel&&<div style={{fontSize:12,color:"#38a169",marginTop:4}}>🗂️ {h.opcionSel.nombre}</div>}
               {totalG>0&&<div style={{fontSize:13,color:"#e53e3e",marginTop:4,fontWeight:"bold"}}>💰 {fmtM(totalG)}{h.viaje?.pers>1?` · ${fmtM(Math.ceil(totalG/h.viaje.pers))}/persona`:""}</div>}
               <div style={{display:"flex",gap:8,marginTop:10}}>
                 <button onClick={()=>setVerIdx(verIdx===i?null:i)} style={{...S.btn("#718096",true),flex:1,marginTop:0,padding:"8px",fontSize:13}}>{verIdx===i?"▲ Ocultar":"👁 Ver"}</button>
-                <button onClick={()=>{if(confirm("¿Eliminar?"))onEliminar(h.id);}} style={{...S.btn("#e53e3e",true),width:"auto",marginTop:0,padding:"8px 14px",fontSize:13}}>🗑</button>
+                <button onClick={()=>{if(confirm("¿Eliminar?"))onEliminar(h.id);}} aria-label="Eliminar viaje del historial" style={{...S.btn("#e53e3e",true),width:"auto",marginTop:0,padding:"8px 14px",fontSize:13}}>🗑</button>
               </div>
               {verIdx===i&&h.opcionSel?.dias&&(
-                <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f4f4f4"}} className="fade-in">
+                <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}} className="fade-in">
                   {h.opcionSel.dias.map((dia,di)=>(
                     <div key={di} style={{marginBottom:10}}>
-                      <div style={{fontWeight:"bold",fontSize:13,marginBottom:6,background:"#f4f4f4",padding:"6px 10px",borderRadius:8}}>📅 Día {dia.dia}: {dia.titulo}</div>
+                      <div style={{fontWeight:"bold",fontSize:13,marginBottom:6,background:"#f4f4f4",padding:"6px 10px",borderRadius:8,color:"#2d3748"}}>📅 Día {dia.dia}: {dia.titulo}</div>
                       {dia.paradas?.map((p,pi)=>{const t=TIPOS[p.tipo]||TIPOS.turistico;return(<div key={pi} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid #f9f9f9",alignItems:"center"}}><span>{t.icon}</span><div><span style={{fontSize:13,fontWeight:"bold"}}>{p.nombre}</span>{p.horaLlegada&&<span style={{fontSize:11,color:"#718096"}}> · 🕐{p.horaLlegada}</span>}</div></div>);})}
                     </div>
                   ))}
@@ -849,6 +921,7 @@ function App(){
   const [pers,setPers]=useState(()=>LS.get("pers",2));
   const [historial,setHistorial]=useState(()=>LS.get("historial",[]));
   const [completadas,setCompletadas]=useState(()=>LS.get("completadas",[]));
+  const [darkMode,setDarkMode]=useState(()=>LS.get("darkMode",false));
   const [equipaje,setEquipaje]=useState(()=>LS.get("equipaje",[
     {id:1,texto:"📄 DNI y registro de conducir",ok:false},
     {id:2,texto:"💳 Tarjetas y efectivo",ok:false},
@@ -872,6 +945,7 @@ function App(){
   const [fV,setFV]=useState({origen:"",destino:"",ruta:"",auto:"",fRetiro:"",fDevol:"",pers:"2",buffer:3,notas:""});
   const [fG,setFG]=useState({cat:"nafta",desc:"",monto:""});
   const [fN,setFN]=useState({km:"",rend:"12",precio:""});
+  const [fEP,setFEP]=useState({nombre:"",tipo:"turistico",horaLlegada:"",horaSalida:"",descripcion:"",duracion:"",clave:null});
 
   useEffect(()=>LS.set("viaje",viaje),[viaje]);
   useEffect(()=>LS.set("estado",estado),[estado]);
@@ -883,6 +957,7 @@ function App(){
   useEffect(()=>LS.set("completadas",completadas),[completadas]);
   useEffect(()=>LS.set("equipaje",equipaje),[equipaje]);
   useEffect(()=>{if(inicioR)LS.set("inicioR",inicioR.toISOString());},[inicioR]);
+  useEffect(()=>{document.documentElement.setAttribute("data-theme",darkMode?"dark":"light");LS.set("darkMode",darkMode);},[darkMode]);
   useEffect(()=>{
     if(tab==="mapa"){
       [100,400,900].forEach(ms=>setTimeout(()=>{
@@ -937,6 +1012,18 @@ function App(){
     setTimeout(()=>buscarIA(v),200);
   };
 
+  const abrirEditarViaje=()=>{
+    if(!viaje) return;
+    setFV({origen:viaje.origen||"",destino:viaje.destino||"",ruta:viaje.ruta||"",auto:viaje.auto||"",fRetiro:viaje.fRetiro||"",fDevol:viaje.fDevol||"",pers:String(viaje.pers||2),buffer:viaje.buffer||3,notas:viaje.notas||""});
+    setModal("editarViaje");
+  };
+
+  const guardarEdicionViaje=()=>{
+    if(!fV.origen||!fV.destino||!fV.fRetiro||!fV.fDevol) return;
+    setViaje(v=>({...v,...fV,pers:parseInt(fV.pers)||2,buffer:parseInt(fV.buffer)||3}));
+    setModal(null);
+  };
+
   const buscarIA=async(viajeData)=>{
     const v=viajeData||viaje;
     if(!v||!apiKey){setIaError("Configurá tu API Key en ⚙️");return;}
@@ -948,7 +1035,7 @@ function App(){
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},
         body:JSON.stringify({
-          model:"llama-3.3-70b-versatile",max_tokens:2000,temperature:0.4,
+          model:"openai/gpt-oss-120b",max_tokens:2000,temperature:0.4,
           response_format:{"type":"json_object"},
           messages:[
             {role:"system",content:"Sos un experto en turismo argentino. Respondes solo JSON valido."},
@@ -969,9 +1056,17 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
         })
       });
       const data=await res.json();
-      if(data.error) throw new Error(data.error.message);
-      const parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));
-      if(!parsed.opciones?.length) throw new Error("Sin opciones");
+      if(!res.ok||data.error){
+        const msg=data?.error?.message||`Error HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      let parsed;
+      try{
+        parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));
+      }catch{
+        throw new Error("La IA devolvió un formato inválido. Probá reintentar.");
+      }
+      if(!parsed.opciones?.length) throw new Error("La IA no devolvió opciones. Probá reintentar o revisar tu API Key.");
       setOpciones(parsed.opciones);
       setEstado("listo");
       setTab("opciones");
@@ -990,7 +1085,7 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},
         body:JSON.stringify({
-          model:"llama-3.3-70b-versatile",max_tokens:8000,temperature:0.3,
+          model:"openai/gpt-oss-120b",max_tokens:8000,temperature:0.3,
           response_format:{"type":"json_object"},
           messages:[
             {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido."},
@@ -1017,8 +1112,8 @@ PARA CADA LUGAR turistico:
 - en la descripcion: cuanto tiempo SUMA el desvio y que paisajes/fotos ofrece
 - da VARIAS opciones de lugares en cada ciudad importante (no solo 1 o 2)
 
-COMIDAS segun el horario real del viaje: desayuno 8h, almuerzo 13h, merienda 17h, cena 21h. Cada una como parada "comida" con 3 restaurantes reales de menor a mayor precio.
-DORMIR cuando corresponda por horario: parada "dormir" con 3 alojamientos reales de menor a mayor precio.
+COMIDAS segun el horario real del viaje: desayuno 8h, almuerzo 13h, merienda 17h, cena 21h. Cada una como parada "comida" con 3 restaurantes de menor a mayor precio, preferentemente lugares reales, conocidos y establecidos (evita inventar nombres genericos poco creibles).
+DORMIR cuando corresponda por horario: parada "dormir" con 3 alojamientos reales de menor a mayor precio, preferentemente cadenas o establecimientos conocidos.
 
 ULTIMO DIA: salir a primera hora para llegar a ${viaje.origen} antes de ${horaLimite} (con margen para lavar y entregar el auto).
 
@@ -1033,15 +1128,24 @@ JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"tot
         })
       });
       const data=await res.json();
-      if(data.error) throw new Error(data.error.message);
-      const parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));
-      if(!parsed.dias) throw new Error("Formato incorrecto");
+      if(!res.ok||data.error){
+        const msg=data?.error?.message||`Error HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      let parsed;
+      try{
+        parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));
+      }catch{
+        throw new Error("La IA devolvió un formato inválido. Probá regenerar el itinerario.");
+      }
+      if(!parsed.dias) throw new Error("Formato incorrecto en la respuesta de la IA.");
       const esAR=(lat,lng)=>lat&&lng&&lat>=-55&&lat<=-21&&lng>=-73&&lng<=-53;
       for(const dia of parsed.dias||[]){
         for(const p of dia.paradas||[]){
           if(!esAR(p.lat,p.lng)){
             const coord=await geocodeNominatim(p.nombre+", Argentina");
             if(coord){p.lat=coord.lat;p.lng=coord.lng;}
+            await sleep(1100); // respetar límite de 1 req/seg de Nominatim
           }
         }
       }
@@ -1088,7 +1192,7 @@ JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"tot
       });
       txt+=`\n`;
     });
-    txt+=`_Generado con ViajeFácil_`;
+    txt+=`_Generado con ViajeFácil — hospedajes/restaurantes/precios son sugerencias de IA, verificar antes de reservar_`;
     window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank");
   };
 
@@ -1100,14 +1204,44 @@ JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"tot
     LS.set("opcionSel",nueva);
   };
 
-  const agregarParada=(parada)=>{
+  const agregarParada=(parada,diaIndex)=>{
     if(!opcionSel?.dias) return;
-    // Agregar al último día por defecto
-    const ultimoDia=opcionSel.dias.length-1;
-    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==ultimoDia?d:{...d,paradas:[...(d.paradas||[]),parada]})};
+    const idx=(diaIndex==null||diaIndex<0||diaIndex>=opcionSel.dias.length)?opcionSel.dias.length-1:diaIndex;
+    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==idx?d:{...d,paradas:[...(d.paradas||[]),parada]})};
     setOpcionSel(nueva);
     LS.set("opcionSel",nueva);
     setModal(null);
+  };
+
+  const abrirEditarParada=(clave)=>{
+    if(!opcionSel?.dias) return;
+    const [di,pi]=clave.split("-").map(Number);
+    const p=opcionSel.dias[di]?.paradas?.[pi];
+    if(!p) return;
+    setFEP({nombre:p.nombre||"",tipo:p.tipo||"turistico",horaLlegada:p.horaLlegada||"",horaSalida:p.horaSalida||"",descripcion:p.descripcion||"",duracion:p.duracion||"",clave});
+    setModal("editarParada");
+  };
+
+  const guardarEdicionParada=()=>{
+    if(!opcionSel?.dias||!fEP.clave) return;
+    const [di,pi]=fEP.clave.split("-").map(Number);
+    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas:d.paradas.map((p,j)=>j!==pi?p:{...p,nombre:fEP.nombre,tipo:fEP.tipo,horaLlegada:fEP.horaLlegada,horaSalida:fEP.horaSalida,descripcion:fEP.descripcion,duracion:fEP.duracion})})};
+    setOpcionSel(nueva);
+    LS.set("opcionSel",nueva);
+    setModal(null);
+  };
+
+  const moverParada=(clave,dir)=>{
+    if(!opcionSel?.dias) return;
+    const [di,pi]=clave.split("-").map(Number);
+    const dia=opcionSel.dias[di];
+    const nj=pi+dir;
+    if(!dia||nj<0||nj>=dia.paradas.length) return;
+    const paradas=[...dia.paradas];
+    [paradas[pi],paradas[nj]]=[paradas[nj],paradas[pi]];
+    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas})};
+    setOpcionSel(nueva);
+    LS.set("opcionSel",nueva);
   };
 
   const completarParada=(clave)=>{
@@ -1121,22 +1255,24 @@ JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"tot
   };
 
   return(
-    <div style={S.app}>
+    <div style={S.app} className="app-frame">
       <div style={{display:tab==="mapa"?"block":"none",height:"calc(100vh - 72px)"}}>
         <PantallaMapa viaje={viaje} opcionSel={opcionSel} posGPS={posGPS} estado={estado}/>
       </div>
-      {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} clima={clima} equipaje={equipaje} setEquipaje={setEquipaje} completadas={completadas} onCompletar={completarParada} onNuevo={()=>setModal("viaje")} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} onCompartir={compartirWhatsApp} setTab={setTab} onReintentar={()=>buscarIA(viaje)}/>}
-      {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle} onEliminarParada={eliminarParada} onAbrirAgregarParada={()=>setModal("parada")} onCompartir={compartirWhatsApp}/>}
+      {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} clima={clima} equipaje={equipaje} setEquipaje={setEquipaje} completadas={completadas} onCompletar={completarParada} onNuevo={()=>setModal("viaje")} onEditarViaje={abrirEditarViaje} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} onCompartir={compartirWhatsApp} setTab={setTab} onReintentar={()=>buscarIA(viaje)}/>}
+      {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle} onEliminarParada={eliminarParada} onEditarParada={abrirEditarParada} onMoverParada={moverParada} onAbrirAgregarParada={()=>setModal("parada")} onCompartir={compartirWhatsApp}/>}
       {tab==="gastos"    &&<PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
       {tab==="historial" &&<PantallaHistorial historial={historial} onEliminar={id=>setHistorial(p=>p.filter(h=>h.id!==id))}/>}
-      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey}/>}
+      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode}/>}
       {modal==="viaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)}/>}
+      {modal==="editarViaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={guardarEdicionViaje} onCerrar={()=>setModal(null)} editando={true}/>}
       {modal==="gasto" &&<ModalGasto fG={fG} setFG={setFG} onAgregar={agregarGasto} onCerrar={()=>setModal(null)}/>}
       {modal==="nafta" &&<ModalNafta fN={fN} setFN={setFN} onAgregarComoGasto={(costo,km)=>{setGastos(p=>[...p,{id:Date.now(),cat:"nafta",desc:`Nafta — ${km} km`,monto:costo,fecha:new Date().toLocaleDateString("es-AR")}]);setModal(null);}} onCerrar={()=>setModal(null)}/>}
-      {modal==="parada"&&<ModalAgregarParada onAgregar={agregarParada} onCerrar={()=>setModal(null)}/>}
+      {modal==="parada"&&<ModalAgregarParada opcionSel={opcionSel} onAgregar={agregarParada} onCerrar={()=>setModal(null)}/>}
+      {modal==="editarParada"&&<ModalEditarParada f={fEP} setF={setFEP} onGuardar={guardarEdicionParada} onCerrar={()=>setModal(null)}/>}
       <div style={S.nav}>
         {TABS.map(t=>(
-          <button key={t.id} style={{...S.nvb(tab===t.id,t.color),position:"relative"}} onClick={()=>setTab(t.id)}>
+          <button key={t.id} style={{...S.nvb(tab===t.id,t.color),position:"relative"}} onClick={()=>setTab(t.id)} aria-label={t.label}>
             <span style={{fontSize:18}}>{t.icon}</span>
             <span style={{fontSize:9,fontWeight:tab===t.id?"bold":"normal"}}>{t.label}</span>
             {t.id==="historial"&&historial.length>0&&<div style={{position:"absolute",top:6,right:"50%",transform:"translateX(10px)",background:"#718096",color:"white",borderRadius:"50%",width:15,height:15,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center"}}>{historial.length}</div>}

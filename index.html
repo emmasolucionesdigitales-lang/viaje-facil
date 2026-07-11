@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="7.1";
+const VERSION="7.2";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -91,11 +91,13 @@ function calcHoraLimite(fDevol,bufferHoras){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 // Llama a Groq con reintento automático si hay rate-limit (respeta el tiempo de espera que sugiere la API)
+// reasoning_effort:"low" + include_reasoning:false evita que el modelo gaste tokens "pensando" en silencio,
+// que es lo que agotaba el límite gratuito de tokens/minuto de Groq.
 async function callGroq(apiKey,messages,maxTokens,temperature,intento=0){
   const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
     method:"POST",
     headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},
-    body:JSON.stringify({model:"openai/gpt-oss-120b",max_tokens:maxTokens,temperature,response_format:{"type":"json_object"},messages})
+    body:JSON.stringify({model:"openai/gpt-oss-120b",max_tokens:maxTokens,temperature,response_format:{"type":"json_object"},reasoning_effort:"low",include_reasoning:false,messages})
   });
   const data=await res.json();
   if(!res.ok||data.error){

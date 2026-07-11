@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="7.2";
+const VERSION="7.3";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -90,9 +90,10 @@ function calcHoraLimite(fDevol,bufferHoras){
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
-// Llama a Groq con reintento automático si hay rate-limit (respeta el tiempo de espera que sugiere la API)
-// reasoning_effort:"low" + include_reasoning:false evita que el modelo gaste tokens "pensando" en silencio,
-// que es lo que agotaba el límite gratuito de tokens/minuto de Groq.
+// Llama a Groq con reintento automático si hay rate-limit temporal (respeta el tiempo de espera que sugiere la API).
+// reasoning_effort:"low" + include_reasoning:false evita que el modelo gaste tokens "pensando" en silencio.
+// El plan gratuito tiene un tope DURO de 8000 tokens totales (prompt+respuesta) por request para este modelo,
+// por eso maxTokens se mantiene conservador (ver generarItinerario).
 async function callGroq(apiKey,messages,maxTokens,temperature,intento=0){
   const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
     method:"POST",
@@ -460,7 +461,7 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
       <div style={{padding:16}}>
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>🤖 API Key de Groq (gratis)</div>
-          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>⚠️ El plan gratuito tiene un límite de tokens por minuto: si generás varias opciones seguidas puede tardar unos segundos extra (la app reintenta sola).</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>⚠️ El plan gratuito tiene un tope de 8000 tokens por request para este modelo. Para viajes muy largos (5+ días) el itinerario puede salir incompleto; si pasa, probá dividir el viaje en tramos más cortos.</div>
           {apiKey&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Clave guardada — IA lista</div>}
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
@@ -1094,43 +1095,17 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
     const horaLimite=calcHoraLimite(viaje.fDevol,viaje.buffer);
     try{
       const data=await callGroq(apiKey,[
-        {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido."},
-        {role:"user",content:`Sos un planificador experto del NOA argentino. Crea la hoja de ruta para la opcion "${opcion.nombre}".
+        {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido y compacto (sin espacios innecesarios)."},
+        {role:"user",content:`Crea la hoja de ruta para "${opcion.nombre}": ${viaje.origen} → ${viaje.destino} | Rutas: ${opcion.rutasUsadas?.join(", ")||viaje.ruta} | ${opcion.km} km | Salida: ${salida} | ${viaje.pers} pers | Regreso a ${viaje.origen} antes de ${horaLimite}.${viaje.notas?" Preferencias: "+viaje.notas:""}
 
-DATOS:
-${viaje.origen} → ${viaje.destino} | Rutas base: ${opcion.rutasUsadas?.join(", ")||viaje.ruta} | ${opcion.km} km
-Salida: ${salida} | ${viaje.pers} personas | LIMITE regreso a ${viaje.origen}: antes de ${horaLimite}
-${viaje.notas?"Preferencias: "+viaje.notas:""}
+Reglas clave: recorrido continuo y coherente geograficamente (nunca volver atras); distribuir dias segun duracion; en cada tramo indicar kmDesdeAnterior y tiempoManejo (autopista 110-120, ruta 80-110, montaña 40-60); descanso cada ~2hs; parada de combustible antes de quedarse sin nafta; duracion realista por lugar turistico; comidas en horarios reales (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h) con 3 restaurantes de menor a mayor precio, reales y conocidos; dormir con 3 alojamientos reales de menor a mayor precio; ultimo dia salir temprano para llegar antes de ${horaLimite}; presupuesto total estimado en pesos argentinos; lat/lng reales de Argentina.
 
-PENSA LA RUTA PASO A PASO (coherencia geografica OBLIGATORIA):
-- El recorrido debe ser CONTINUO y con sentido geografico. NUNCA hagas ir y volver al mismo lugar para tomar otra ruta.
-- Si vas por los Valles (RN40), el orden logico es: Tucuman → Tafi del Valle → Amaicha → Ruinas de Quilmes → Colalao → Cafayate, y desde Cafayate seguir hacia el norte. NO volver a Tucuman.
-- En cada punto de bifurcacion real (ej: en Cafayate elegir RN40 o RN68) mencionalo en la descripcion con el estado de ruta y tiempo de cada alternativa.
-- Distribui el viaje en los dias segun la duracion. Si llegada tarde a un punto, ese es el lugar para dormir, y al dia siguiente se continua desde ahi.
-
-PARA CADA TRAMO calcula con velocidades reales (autopista 110-120, ruta 80-110, montaña/cuesta 40-60):
-- kmDesdeAnterior y tiempoManejo
-- DESCANSO cada ~2hs de manejo en pueblo/parador real
-- COMBUSTIBLE antes de quedarte sin nafta (estaciones reales), tipo "ruta", "Cargar combustible" en descripcion
-
-PARA CADA LUGAR turistico:
-- tiempo de visita REALISTA en "duracion" (ej: Pucara de Tilcara 1h, Garganta del Diablo 1.5h, Cerro 7 Colores 45min)
-- en la descripcion: cuanto tiempo SUMA el desvio y que paisajes/fotos ofrece
-- da VARIAS opciones de lugares en cada ciudad importante (no solo 1 o 2)
-
-COMIDAS segun el horario real del viaje: desayuno 8h, almuerzo 13h, merienda 17h, cena 21h. Cada una como parada "comida" con 3 restaurantes de menor a mayor precio, preferentemente lugares reales, conocidos y establecidos (evita inventar nombres genericos poco creibles).
-DORMIR cuando corresponda por horario: parada "dormir" con 3 alojamientos reales de menor a mayor precio, preferentemente cadenas o establecimientos conocidos.
-
-ULTIMO DIA: salir a primera hora para llegar a ${viaje.origen} antes de ${horaLimite} (con margen para lavar y entregar el auto).
-
-PRESUPUESTO: estima el costo total del viaje en pesos argentinos actuales (combustible segun km y consumo promedio, alojamiento por noche, comidas, entradas/extras).
-
-lat/lng REALES de Argentina para cada parada.
+Se BREVE en las descripciones (1 linea corta cada una) para no exceder el limite de tokens.
 
 Tipos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
 
-JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"total":0,"detalle":"str"},"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str con ruta, tiempo que suma y paisajes","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}]}`}
-      ],8000,0.3);
+JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"total":0,"detalle":"str"},"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str breve","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}]}`}
+      ],6500,0.3);
       let parsed;
       try{
         parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));

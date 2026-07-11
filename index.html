@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.1";
+const VERSION="8.2";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -83,6 +83,7 @@ const fmtM  =n=>"$"+(Math.round(n)||0).toLocaleString("es-AR");
 const fmtDt =s=>{try{return new Date(s).toLocaleString("es-AR",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});}catch{return "—";}};
 const fmtDs =s=>{try{return new Date(s).toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"});}catch{return "—";}};
 const fmtHora=s=>{try{return new Date(s).toLocaleString("es-AR",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});}catch{return s||"—";}};
+const fmtHoraCorta=d=>{try{return d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});}catch{return "";}};
 function calcDias(f1,f2){return Math.max(1,Math.round((new Date(f2)-new Date(f1))/(1000*60*60*24))+1);}
 function calcHoraLimite(fDevol,bufferHoras){
   const d=new Date(fDevol);
@@ -112,6 +113,63 @@ function matchPOI(nombreElegido,candidatos){
   if(m) return m;
   m=candidatos.find(c=>normTxt(c.nombre).includes(t)||t.includes(normTxt(c.nombre)));
   return m||null;
+}
+
+// ── CÁLCULO AUTOMÁTICO DE TIEMPOS/DURACIÓN POR PARADA ─────
+// En vez de confiar en que la IA "adivine" bien los horarios (lo que generaba horarios sin sentido),
+// la app calcula ella misma: parsea el tiempo de manejo entre paradas, aplica una duración mínima
+// realista según el tipo de lugar, y encadena horaLlegada/horaSalida de forma consistente.
+function parseMinutos(s){
+  if(!s) return 0;
+  s=String(s);
+  const h=s.match(/(\d+)\s*h/i);
+  const m=s.match(/(\d+)\s*m/i);
+  let total=(h?parseInt(h[1])*60:0)+(m?parseInt(m[1]):0);
+  if(!h&&!m){const n=s.match(/(\d+)/);if(n) total=parseInt(n[1]);}
+  return total;
+}
+function fmtDuracionMin(min){
+  if(!min||min<=0) return "";
+  const h=Math.floor(min/60),m=min%60;
+  return h>0?`${h}h${m>0?" "+m+"m":""}`:`${m}m`;
+}
+// Duración mínima realista según el tipo de parada (independiente de lo que diga la IA).
+function duracionDefaultMin(p){
+  const tipo=p.tipo;
+  if(tipo==="descanso") return 15;
+  if(tipo==="comida") return 45;
+  if(tipo==="ruta") return 10;
+  if(tipo==="dormir"||tipo==="origen"||tipo==="destino") return 0;
+  const texto=((p.cat||"")+" "+(p.descripcion||"")+" "+(p.nombre||"")).toLowerCase();
+  if(tipo==="mirador") return /sendero|caminata|hike/.test(texto)?45:20;
+  if(tipo==="turistico"){
+    if(/waterfall|cascada|catarata|garganta|sendero|caminata|trekking/.test(texto)) return 90;
+    if(/museum|museo|pucara|pucará|ruinas|fuerte|historic/.test(texto)) return 60;
+    if(/viewpoint|plaza|monumento|iglesia|catedral|casa de gobierno/.test(texto)) return 25;
+    return 40;
+  }
+  return 30;
+}
+// Recorre TODOS los días y recalcula horaLlegada/horaSalida/duracion de cada parada en cadena,
+// arrancando desde la hora real de salida de casa. Así el horario siempre es matemáticamente
+// consistente, sin importar lo que haya "imaginado" la IA.
+function recalcularHorariosViaje(dias,horaSalidaCasaISO){
+  const fechaBase=new Date(horaSalidaCasaISO);
+  return dias.map((dia,di)=>{
+    let cursor;
+    if(di===0){ cursor=new Date(fechaBase); }
+    else{ cursor=new Date(fechaBase); cursor.setDate(cursor.getDate()+di); cursor.setHours(8,0,0,0); }
+    const paradas=(dia.paradas||[]).map(p=>{
+      cursor=new Date(cursor.getTime()+parseMinutos(p.tiempoManejo)*60000);
+      const horaLlegada=fmtHoraCorta(cursor);
+      if(p.tipo==="dormir"){ return {...p,horaLlegada,horaSalida:""}; }
+      const durMin=Math.max(duracionDefaultMin(p),parseMinutos(p.duracion));
+      cursor=new Date(cursor.getTime()+durMin*60000);
+      const horaSalida=fmtHoraCorta(cursor);
+      return {...p,horaLlegada,horaSalida,duracion:fmtDuracionMin(durMin)||p.duracion};
+    });
+    return {...dia,paradas};
+  });
 }
 
 // Llama a Groq con reintento automático si hay rate-limit temporal (respeta el tiempo de espera que sugiere la API).
@@ -246,10 +304,6 @@ function MapaLeaflet({paradas,posGPS}){
     _map=L.map(ref.current,{zoomControl:true}).setView([-27,-65],6);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:19}).addTo(_map);
     setTimeout(()=>{if(_map)_map.invalidateSize();},150);
-    // IMPORTANTE: al desmontar (ej. cuando se crea un viaje nuevo y opcionSel pasa a null),
-    // hay que destruir la instancia de Leaflet y limpiar las variables globales.
-    // Si no se hace esto, la próxima vez que este componente se monte quedará un mapa
-    // "fantasma" apuntando a un <div> que ya no existe, y el mapa nuevo se ve en blanco.
     return ()=>{
       if(_map){ try{_map.remove();}catch{} }
       _map=null;_ml=null;_rl=null;_gm=null;_lastBounds=null;
@@ -477,7 +531,8 @@ function ModalAgregarParada({opcionSel,onAgregar,onCerrar}){
   return(
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
-        <div style={{fontWeight:"bold",fontSize:19,marginBottom:12,color:"var(--text)"}}>➕ Agregar Parada Propia</div>
+        <div style={{fontWeight:"bold",fontSize:19,marginBottom:4,color:"var(--text)"}}>➕ Agregar Parada Propia</div>
+        <div style={{fontSize:12,color:"var(--text-soft)",marginBottom:10}}>No hay límite de paradas. El horario de esta parada y el de las siguientes se recalcula automáticamente al agregarla.</div>
         {dias.length>1&&(<>
           <label style={{...S.lbl,marginTop:0}}>Agregar al día</label>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
@@ -494,10 +549,9 @@ function ModalAgregarParada({opcionSel,onAgregar,onCerrar}){
             <button key={k} onClick={()=>setF(p=>({...p,tipo:k}))} style={{background:f.tipo===k?t.color:"var(--input-bg)",color:f.tipo===k?"white":"var(--text)",border:`1.5px solid ${f.tipo===k?t.color:"var(--border)"}`,borderRadius:8,padding:"8px",cursor:"pointer",fontSize:13}}>{t.icon} {t.label}</button>
           ))}
         </div>
-        <label style={S.lbl}>Hora de llegada (opcional)</label>
-        <input style={S.inp} type="time" value={f.horaLlegada} onChange={e=>setF(p=>({...p,horaLlegada:e.target.value}))}/>
         <label style={S.lbl}>Descripción (opcional)</label>
         <input style={S.inp} placeholder="Ej: Paseo junto al dique" value={f.descripcion} onChange={e=>setF(p=>({...p,descripcion:e.target.value}))}/>
+        <div style={{fontSize:11,color:"var(--text-soft)",marginTop:-2,marginBottom:6}}>La hora de llegada/salida la calcula la app sola según el tipo de lugar — no hace falta cargarla a mano.</div>
         <button style={S.btn("#38a169")} onClick={agregar} disabled={buscando}>{buscando?"📍 Buscando ubicación...":"✅ Agregar al itinerario"}</button>
         <button style={S.btn("#718096",true)} onClick={onCerrar}>Cancelar</button>
       </div>
@@ -518,11 +572,7 @@ function ModalEditarParada({f,setF,onGuardar,onCerrar}){
             <button key={k} onClick={()=>setF(p=>({...p,tipo:k}))} style={{background:f.tipo===k?t.color:"var(--input-bg)",color:f.tipo===k?"white":"var(--text)",border:`1.5px solid ${f.tipo===k?t.color:"var(--border)"}`,borderRadius:8,padding:"8px",cursor:"pointer",fontSize:13}}>{t.icon} {t.label}</button>
           ))}
         </div>
-        <label style={S.lbl}>Hora de llegada</label>
-        <input style={S.inp} type="time" value={f.horaLlegada} onChange={e=>setF(p=>({...p,horaLlegada:e.target.value}))}/>
-        <label style={S.lbl}>Hora de salida</label>
-        <input style={S.inp} type="time" value={f.horaSalida} onChange={e=>setF(p=>({...p,horaSalida:e.target.value}))}/>
-        <label style={S.lbl}>Duración</label>
+        <label style={S.lbl}>Duración (opcional — si la dejás vacía, la app calcula una duración típica según el tipo)</label>
         <input style={S.inp} placeholder="Ej: 1h 30m" value={f.duracion} onChange={e=>setF(p=>({...p,duracion:e.target.value}))}/>
         <label style={S.lbl}>Descripción</label>
         <textarea style={{...S.inp,height:70,resize:"none"}} value={f.descripcion} onChange={e=>setF(p=>({...p,descripcion:e.target.value}))}/>
@@ -547,7 +597,7 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
       <div style={{padding:16}}>
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>🤖 API Key de Groq (gratis)</div>
-          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>ℹ️ Antes de generar cada día, la app busca lugares reales verificados (OpenStreetMap: miradores, historia, cascadas, hoteles, camping, restaurantes) cerca de la ruta y del destino, y la IA arma el itinerario priorizando esos lugares reales — así se evitan ubicaciones inventadas o muy lejanas.</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>ℹ️ Antes de generar cada día, la app busca sola lugares reales verificados (OpenStreetMap: miradores, historia, cascadas, hoteles, camping, restaurantes) cerca de la ruta y del destino, los agrega automáticamente al itinerario (sin límite de cantidad) y calcula ella misma cuánto tiempo lleva cada parada según su tipo — vos podés reordenarlas o sacarlas cuando quieras.</div>
           {apiKey&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Clave guardada — IA lista</div>}
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
@@ -835,7 +885,7 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                     </div>
                   )}
                   <div style={{marginTop:12,padding:10,background:"#fffbeb",borderRadius:10,fontSize:12,color:"#744210"}}>
-                    💡 La app busca lugares reales verificados (OpenStreetMap) cerca de esta ruta y del destino: miradores, sitios históricos, cascadas, hoteles, camping y restaurantes. En ruta, sin más de 60 min de desvío; en destino, radio de al menos 40km. Los precios son estimaciones de IA y conviene verificarlos.
+                    💡 La app busca sola lugares reales verificados (OpenStreetMap) cerca de esta ruta y del destino, los agrega automáticamente al itinerario (sin límite de cantidad) y calcula ella misma el tiempo de estadía en cada uno según su tipo. Podés reordenar o eliminar paradas después. Los precios son estimaciones de IA y conviene verificarlos.
                   </div>
                 </div>
               )}
@@ -869,7 +919,6 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
 
 function PantallaMapa({viaje,opcionSel,posGPS,estado}){
   const paradas=opcionSel?.dias?.flatMap(d=>d.paradas||[])||[];
-  // índice global para numerar igual que el mapa (solo cuentan las que tienen coords válidas)
   let numGlobal=0;
   const conNum=opcionSel?.dias?.map(d=>({
     ...d,
@@ -885,11 +934,9 @@ function PantallaMapa({viaje,opcionSel,posGPS,estado}){
       {viaje&&!opcionSel?.dias&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,color:"#a0aec0",textAlign:"center",padding:20}}><div style={{fontSize:48}}>🗂️</div><div style={{marginTop:10,color:"#4a5568"}}>Elegí una opción en 🗂️</div></div>}
       {viaje&&opcionSel?.dias&&(
         <>
-          {/* Mapa */}
           <div style={{height:"40%",minHeight:220,position:"relative",borderBottom:"3px solid #e53e3e"}}>
             <MapaLeaflet paradas={paradas} posGPS={posGPS}/>
           </div>
-          {/* Itinerario detallado */}
           <div style={{flex:1,overflowY:"auto",background:"#f7fafc",padding:"10px 12px"}}>
             <div style={{background:"#fffbeb",border:"1px solid #f6e05e",borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:11,color:"#744210"}}>
               ⚠️ Hospedajes, restaurantes y precios son sugerencias generadas por IA. Verificá disponibilidad y precio real antes de reservar.
@@ -1086,7 +1133,6 @@ function App(){
     }
   },[tab]);
 
-  // Clima al crear viaje
   useEffect(()=>{
     if(!viaje?.destino) {setClima(null);return;}
     (async()=>{
@@ -1098,7 +1144,6 @@ function App(){
     })();
   },[viaje?.id]);
 
-  // Countdown + notificación
   useEffect(()=>{
     if(estado!=="viajando"||!viaje) return;
     const calc=()=>{
@@ -1183,8 +1228,6 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
     setLoadingIA(false);
   };
 
-  // Paso 1: planifica el ESQUELETO del viaje completo (desde/hasta de cada día) en UNA sola llamada liviana,
-  // para que el recorrido día a día sea geográficamente coherente (ida + estadía + vuelta).
   const generarEsqueleto=async(opcion,totalDias)=>{
     const horaLimite=calcHoraLimite(viaje.fDevol,viaje.buffer);
     const data=await callGroq(apiKey,[
@@ -1206,9 +1249,6 @@ JSON: {"dias":[{"dia":1,"desde":"str","hasta":"str","kmDia":0,"tipo":"ida|estadi
     return parsed.dias;
   };
 
-  // Genera UN día del itinerario (llamada liviana, evita el tope de tokens de Groq).
-  // Recibe el tramo ya fijado por el esqueleto (desde/hasta/kmDia) y los lugares REALES cercanos (OSM),
-  // para que la IA elija entre datos verificados en vez de inventar coordenadas/nombres.
   const generarDia=async(opcion,diaNum,totalDias,esqueletoDia,contextoPrevio,pois)=>{
     const horaLimite=calcHoraLimite(viaje.fDevol,viaje.buffer);
     const esPrimero=diaNum===1;
@@ -1235,7 +1275,7 @@ JSON: {"dias":[{"dia":1,"desde":"str","hasta":"str","kmDia":0,"tipo":"ida|estadi
 Tramo fijo de este día: DESDE ${desde} HASTA ${hasta}${kmDia?` (aprox ${kmDia} km)`:""}. ${inicioTxt} ${finTxt}
 ${viaje.pers} personas. Presupuesto: ${presuTxt}${viaje.notas?" Preferencias: "+viaje.notas:""}
 
-LUGARES TURÍSTICOS REALES Y VERIFICADOS CERCA DE ESTE TRAMO (priorizá elegir de esta lista, son datos reales de mapas — si necesitás más podés sumar otros bien conocidos, siempre con nombre real): ${listaAtr}
+LUGARES TURÍSTICOS REALES Y VERIFICADOS CERCA DE ESTE TRAMO (priorizá elegir de esta lista, e incluí TODOS los que razonablemente entren en el tiempo disponible del día, no solo uno o dos — si necesitás más podés sumar otros bien conocidos, siempre con nombre real): ${listaAtr}
 ALOJAMIENTOS REALES CERCANOS (elegí 3 de esta lista si hay suficientes, de menor a mayor precio): ${listaAloj}
 RESTAURANTES REALES CERCANOS (elegí 3 de esta lista si hay suficientes): ${listaRest}
 
@@ -1244,10 +1284,10 @@ OBJETIVO PRINCIPAL: aprovechar al máximo el tiempo disponible del día, incluye
 REGLA DE DESVÍO EN RUTA: los atractivos que impliquen desviarte de la ruta directa entre ${desde} y ${hasta} NO deben sumar más de 60 minutos extra de manejo (ida y vuelta) respecto del camino directo.
 ${tipoDia==="estadia"?`REGLA DE ESTADÍA: hoy es día de estadía en ${hasta} (ya llegaste al destino). Buscá lugares para conocer en un radio de AL MENOS 40km alrededor de ${hasta} — no te limites solo al centro.`:""}
 
-Reglas adicionales: respetar estrictamente el tramo desde/hasta indicado; TODAS las paradas deben estar geográficamente ubicadas ENTRE ${desde} y ${hasta}, o en ${hasta} si el día termina ahí, o dentro del radio de 40km si es día de estadía; velocidades reales (autopista 110-120, ruta 80-110, montaña 40-60); indicar kmDesdeAnterior y tiempoManejo por tramo; descanso cada ~2hs de manejo; parada de combustible antes de quedarse sin nafta; comidas en horario real (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h); si el día termina en una localidad para pernoctar, agregar parada "dormir" con 3 opciones de alojamiento de menor a mayor precio, cada una con campo "tipo" (camping, hostel, hotel o cabaña) — incluí SIEMPRE al menos 1 camping u opción muy económica si figura en la lista o existe en la zona; descripciones BREVES (1 línea) mencionando por qué vale la pena (vista, historia, naturaleza); lat/lng: si el lugar está en las listas de arriba usá esas coordenadas aproximadas, si no, poné tu mejor estimación real de Argentina.
+Reglas adicionales: respetar estrictamente el tramo desde/hasta indicado; TODAS las paradas deben estar geográficamente ubicadas ENTRE ${desde} y ${hasta}, o en ${hasta} si el día termina ahí, o dentro del radio de 40km si es día de estadía; velocidades reales (autopista 110-120, ruta 80-110, montaña 40-60); indicar kmDesdeAnterior y tiempoManejo por tramo (siempre en formato "Xh Ym" o "Ym"); descanso cada ~2hs de manejo; parada de combustible antes de quedarse sin nafta; comidas en horario real (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h); si el día termina en una localidad para pernoctar, agregar parada "dormir" con 3 opciones de alojamiento de menor a mayor precio, cada una con campo "tipo" (camping, hostel, hotel o cabaña) — incluí SIEMPRE al menos 1 camping u opción muy económica si figura en la lista o existe en la zona; descripciones BREVES (1 línea) mencionando por qué vale la pena (vista, historia, naturaleza); lat/lng: si el lugar está en las listas de arriba usá esas coordenadas aproximadas, si no, poné tu mejor estimación real de Argentina. No hace falta que calcules horaLlegada/horaSalida con precisión perfecta, la app los recalcula sola — enfocate en el ORDEN correcto de las paradas y en tiempoManejo/duracion realistas.
 Tipos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
 
-JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamiento":0,"comida":0,"extras":0},"paradas":[{"nombre":"str","tipo":"str","descripcion":"str breve","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[{"nombre":"str","tipo":"camping|hostel|hotel|cabaña","precio":"str","descripcion":"str"}],"restaurantes":[]}]}`}
+JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamiento":0,"comida":0,"extras":0},"paradas":[{"nombre":"str","tipo":"str","descripcion":"str breve","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[{"nombre":"str","tipo":"camping|hostel|hotel|cabaña","precio":"str","descripcion":"str"}],"restaurantes":[]}]}`}
     ],2900,0.3);
     let parsed;
     try{
@@ -1275,8 +1315,6 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
         const esqueletoDia=esqueleto[d-1];
         const tipoDia=esqueletoDia?.tipo||(d===totalDias?"vuelta":"ida");
 
-        // Geocodificamos desde/hasta del día para anclar la búsqueda de lugares REALES (OSM),
-        // y para poder descartar después cualquier coordenada que el modelo invente muy lejos.
         const desdeTxt=(esqueletoDia?.desde||viaje.origen)+", Argentina";
         const hastaTxt=(esqueletoDia?.hasta||viaje.destino)+", Argentina";
         const desdeCoord=await geocodeNominatim(desdeTxt); await sleep(1100);
@@ -1299,7 +1337,7 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
           let match=null;
           if(p.tipo==="turistico"||p.tipo==="mirador") match=matchPOI(p.nombre,poisDelDia.atractivos);
           if(match){
-            p.lat=match.lat; p.lng=match.lng; p.verificado=true;
+            p.lat=match.lat; p.lng=match.lng; p.verificado=true; if(match.cat) p.cat=match.cat;
           } else {
             let necesitaGeocode=!esAR(p.lat,p.lng);
             if(!necesitaGeocode&&ancla&&haversineKm(p.lat,p.lng,ancla.lat,ancla.lng)>150) necesitaGeocode=true;
@@ -1309,12 +1347,10 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
               if(coord&&(!ancla||haversineKm(coord.lat,coord.lng,ancla.lat,ancla.lng)<150)){
                 p.lat=coord.lat;p.lng=coord.lng;
               }else{
-                p.lat=null;p.lng=null; // mejor sin marcador que un marcador incorrecto en el mapa
+                p.lat=null;p.lng=null;
               }
             }
           }
-          // Grounding de alojamientos y restaurantes: si el nombre matchea con un lugar real cercano,
-          // reemplazamos el nombre por el real y guardamos sus coordenadas verificadas.
           if(p.alojamientos?.length){
             p.alojamientos=p.alojamientos.map(a=>{
               const am=matchPOI(a.nombre,poisDelDia.alojamientos);
@@ -1338,7 +1374,8 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
         contextoPrevio={nombre:ultima?.nombre,hora:ultima?.horaSalida||ultima?.horaLlegada};
       }
       presTotal.total=presTotal.combustible+presTotal.alojamiento+presTotal.comida+presTotal.extras;
-      const completa={...opcion,dias:diasResultado,presupuesto:presTotal};
+      const diasConHorarios=recalcularHorariosViaje(diasResultado,viaje.horaSalidaCasa||viaje.fRetiro);
+      const completa={...opcion,dias:diasConHorarios,presupuesto:presTotal};
       setOpcionSel(completa);
       LS.set("opcionSel",completa);
       setCompletadas([]);
@@ -1388,7 +1425,8 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
   const eliminarParada=(clave)=>{
     if(!opcionSel?.dias) return;
     const [di,pi]=clave.split("-").map(Number);
-    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas:d.paradas.filter((_,j)=>j!==pi)})};
+    const nueva0={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas:d.paradas.filter((_,j)=>j!==pi)})};
+    const nueva={...nueva0,dias:recalcularHorariosViaje(nueva0.dias,viaje.horaSalidaCasa||viaje.fRetiro)};
     setOpcionSel(nueva);
     LS.set("opcionSel",nueva);
   };
@@ -1396,7 +1434,8 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
   const agregarParada=(parada,diaIndex)=>{
     if(!opcionSel?.dias) return;
     const idx=(diaIndex==null||diaIndex<0||diaIndex>=opcionSel.dias.length)?opcionSel.dias.length-1:diaIndex;
-    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==idx?d:{...d,paradas:[...(d.paradas||[]),parada]})};
+    const nueva0={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==idx?d:{...d,paradas:[...(d.paradas||[]),parada]})};
+    const nueva={...nueva0,dias:recalcularHorariosViaje(nueva0.dias,viaje.horaSalidaCasa||viaje.fRetiro)};
     setOpcionSel(nueva);
     LS.set("opcionSel",nueva);
     setModal(null);
@@ -1414,9 +1453,10 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
   const guardarEdicionParada=()=>{
     if(!opcionSel?.dias||!fEP.clave) return;
     const [di,pi]=fEP.clave.split("-").map(Number);
-    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas:d.paradas.map((p,j)=>j!==pi?p:{...p,nombre:fEP.nombre,tipo:fEP.tipo,horaLlegada:fEP.horaLlegada,horaSalida:fEP.horaSalida,descripcion:fEP.descripcion,duracion:fEP.duracion})})};
-    setOpcionSel(nueva);
-    LS.set("opcionSel",nueva);
+    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas:d.paradas.map((p,j)=>j!==pi?p:{...p,nombre:fEP.nombre,tipo:fEP.tipo,descripcion:fEP.descripcion,duracion:fEP.duracion})})};
+    const final={...nueva,dias:recalcularHorariosViaje(nueva.dias,viaje.horaSalidaCasa||viaje.fRetiro)};
+    setOpcionSel(final);
+    LS.set("opcionSel",final);
     setModal(null);
   };
 
@@ -1428,7 +1468,8 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
     if(!dia||nj<0||nj>=dia.paradas.length) return;
     const paradas=[...dia.paradas];
     [paradas[pi],paradas[nj]]=[paradas[nj],paradas[pi]];
-    const nueva={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas})};
+    const nueva0={...opcionSel,dias:opcionSel.dias.map((d,i)=>i!==di?d:{...d,paradas})};
+    const nueva={...nueva0,dias:recalcularHorariosViaje(nueva0.dias,viaje.horaSalidaCasa||viaje.fRetiro)};
     setOpcionSel(nueva);
     LS.set("opcionSel",nueva);
   };

@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="7.3";
+const VERSION="7.4";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -92,8 +92,6 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 // Llama a Groq con reintento automático si hay rate-limit temporal (respeta el tiempo de espera que sugiere la API).
 // reasoning_effort:"low" + include_reasoning:false evita que el modelo gaste tokens "pensando" en silencio.
-// El plan gratuito tiene un tope DURO de 8000 tokens totales (prompt+respuesta) por request para este modelo,
-// por eso maxTokens se mantiene conservador (ver generarItinerario).
 async function callGroq(apiKey,messages,maxTokens,temperature,intento=0){
   const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
     method:"POST",
@@ -461,7 +459,7 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
       <div style={{padding:16}}>
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>🤖 API Key de Groq (gratis)</div>
-          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>⚠️ El plan gratuito tiene un tope de 8000 tokens por request para este modelo. Para viajes muy largos (5+ días) el itinerario puede salir incompleto; si pasa, probá dividir el viaje en tramos más cortos.</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>ℹ️ El itinerario se genera día por día (no todo junto), para que funcione bien incluso en viajes largos con el plan gratuito de Groq.</div>
           {apiKey&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Clave guardada — IA lista</div>}
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
@@ -677,7 +675,7 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
   );
 }
 
-function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItinerario,loadingDetalle,generandoIdx,onEliminarParada,onEditarParada,onMoverParada,onAbrirAgregarParada,onCompartir}){
+function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItinerario,loadingDetalle,generandoIdx,progresoDia,onEliminarParada,onEditarParada,onMoverParada,onAbrirAgregarParada,onCompartir}){
   const [expandido,setExpandido]=useState(null);
   if(!viaje) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"var(--text-soft)",marginTop:8}}>Creá un viaje en 🏠 Inicio</div></div></div></div>);
   if(loadingIA) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44,animation:"spin 1s linear infinite"}}>🤖</div><div style={{fontWeight:"bold",marginTop:12}}>Generando...</div></div></div></div>);
@@ -743,7 +741,7 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                     </div>
                   )}
                   <div style={{marginTop:12,padding:10,background:"#fffbeb",borderRadius:10,fontSize:12,color:"#744210"}}>
-                    💡 Al elegir esta ruta, la IA genera la hoja de ruta completa: descansos, dónde cargar combustible, lugares para conocer y el detalle en el mapa. Los nombres de hoteles/restaurantes/precios son sugerencias y conviene verificarlos.
+                    💡 Al elegir esta ruta, la IA genera la hoja de ruta completa día por día: descansos, dónde cargar combustible, lugares para conocer y el detalle en el mapa. Los nombres de hoteles/restaurantes/precios son sugerencias y conviene verificarlos.
                   </div>
                 </div>
               )}
@@ -765,7 +763,7 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                 </div>
               )}
               <button style={S.btn(c,false)} onClick={()=>generarItinerario(op,oi)} disabled={loadingDetalle}>
-                {generandoEsta?"⏳ Generando itinerario...":sel?"🔄 Regenerar itinerario":"🗺️ Elegir y generar itinerario"}
+                {generandoEsta?`⏳ Generando día ${progresoDia?.actual||1}/${progresoDia?.total||"?"}...`:sel?"🔄 Regenerar itinerario":"🗺️ Elegir y generar itinerario"}
               </button>
             </div>
           );
@@ -961,6 +959,7 @@ function App(){
   const [loadingIA,setLoadingIA]=useState(false);
   const [loadingDetalle,setLoadingDetalle]=useState(false);
   const [generandoIdx,setGenerandoIdx]=useState(null);
+  const [progresoDia,setProgresoDia]=useState(null);
   const [iaError,setIaError]=useState("");
   const [modal,setModal]=useState(null);
   const [posGPS,setPosGPS]=useState(null);
@@ -1054,7 +1053,6 @@ function App(){
     const v=viajeData||viaje;
     if(!v||!apiKey){setIaError("Configurá tu API Key en ⚙️");return;}
     setLoadingIA(true);setOpciones([]);setIaError("");
-    const dias=calcDias(v.fRetiro,v.fDevol);
     const horaLimite=calcHoraLimite(v.fDevol,v.buffer);
     try{
       const data=await callGroq(apiKey,[
@@ -1087,49 +1085,74 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
     setLoadingIA(false);
   };
 
+  // Genera UN día del itinerario (llamada liviana, evita el tope de tokens de Groq)
+  const generarDia=async(opcion,diaNum,totalDias,contextoPrevio)=>{
+    const horaLimite=calcHoraLimite(viaje.fDevol,viaje.buffer);
+    const esUltimo=diaNum===totalDias;
+    const esPrimero=diaNum===1;
+    const inicioTxt=esPrimero
+      ?`Es el primer día. Sale de ${viaje.origen} a las ${fmtHora(viaje.fRetiro)}.`
+      :`Continúa desde donde terminó el día anterior: ${contextoPrevio?.nombre||viaje.origen}${contextoPrevio?.hora?` (aprox ${contextoPrevio.hora})`:""}, siguiendo rumbo a ${viaje.destino}.`;
+    const finTxt=esUltimo
+      ?`Es el ÚLTIMO día del viaje: debe terminar llegando a ${viaje.origen} antes de ${horaLimite} (dejar margen para lavar y entregar el auto).`
+      :`No es el último día, puede terminar en una localidad intermedia razonable rumbo a ${viaje.destino}.`;
+    const data=await callGroq(apiKey,[
+      {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido y compacto."},
+      {role:"user",content:`Planificá SOLO el día ${diaNum} de ${totalDias} de un viaje en auto: "${opcion.nombre}" (${viaje.origen} → ${viaje.destino}, rutas: ${opcion.rutasUsadas?.join(", ")||viaje.ruta}).
+${inicioTxt} ${finTxt}
+${viaje.pers} personas.${viaje.notas?" Preferencias: "+viaje.notas:""}
+
+Reglas: coherencia geográfica (avanzar siempre hacia ${viaje.destino}, nunca retroceder); velocidades reales (autopista 110-120, ruta 80-110, montaña 40-60); indicar kmDesdeAnterior y tiempoManejo por tramo; descanso cada ~2hs de manejo; parada de combustible antes de quedarse sin nafta; comidas en horario real (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h) con 3 restaurantes reales y conocidos de menor a mayor precio; si el día termina en algún lugar, agregar parada "dormir" con 3 alojamientos reales de menor a mayor precio; descripciones BREVES (1 línea); lat/lng reales de Argentina.
+Tipos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
+
+JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamiento":0,"comida":0,"extras":0},"paradas":[{"nombre":"str","tipo":"str","descripcion":"str breve","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}`}
+    ],2400,0.3);
+    let parsed;
+    try{
+      parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));
+    }catch{
+      throw new Error(`El día ${diaNum} devolvió un formato inválido. Probá regenerar.`);
+    }
+    if(!parsed.paradas?.length) throw new Error(`El día ${diaNum} no incluyó paradas.`);
+    return parsed;
+  };
+
   const generarItinerario=async(opcion,oi)=>{
     if(!viaje||!apiKey) return;
     setLoadingDetalle(true);setGenerandoIdx(oi??null);
-    const dias=calcDias(viaje.fRetiro,viaje.fDevol);
-    const salida=fmtHora(viaje.fRetiro);
-    const horaLimite=calcHoraLimite(viaje.fDevol,viaje.buffer);
+    const totalDias=calcDias(viaje.fRetiro,viaje.fDevol);
+    const esAR=(lat,lng)=>lat&&lng&&lat>=-55&&lat<=-21&&lng>=-73&&lng<=-53;
     try{
-      const data=await callGroq(apiKey,[
-        {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido y compacto (sin espacios innecesarios)."},
-        {role:"user",content:`Crea la hoja de ruta para "${opcion.nombre}": ${viaje.origen} → ${viaje.destino} | Rutas: ${opcion.rutasUsadas?.join(", ")||viaje.ruta} | ${opcion.km} km | Salida: ${salida} | ${viaje.pers} pers | Regreso a ${viaje.origen} antes de ${horaLimite}.${viaje.notas?" Preferencias: "+viaje.notas:""}
-
-Reglas clave: recorrido continuo y coherente geograficamente (nunca volver atras); distribuir dias segun duracion; en cada tramo indicar kmDesdeAnterior y tiempoManejo (autopista 110-120, ruta 80-110, montaña 40-60); descanso cada ~2hs; parada de combustible antes de quedarse sin nafta; duracion realista por lugar turistico; comidas en horarios reales (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h) con 3 restaurantes de menor a mayor precio, reales y conocidos; dormir con 3 alojamientos reales de menor a mayor precio; ultimo dia salir temprano para llegar antes de ${horaLimite}; presupuesto total estimado en pesos argentinos; lat/lng reales de Argentina.
-
-Se BREVE en las descripciones (1 linea corta cada una) para no exceder el limite de tokens.
-
-Tipos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
-
-JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"total":0,"detalle":"str"},"dias":[{"dia":1,"titulo":"str","kmDelDia":0,"paradas":[{"nombre":"str","tipo":"str","descripcion":"str breve","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}]}`}
-      ],6500,0.3);
-      let parsed;
-      try{
-        parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));
-      }catch{
-        throw new Error("La IA devolvió un formato inválido. Probá regenerar el itinerario.");
-      }
-      if(!parsed.dias) throw new Error("Formato incorrecto en la respuesta de la IA.");
-      const esAR=(lat,lng)=>lat&&lng&&lat>=-55&&lat<=-21&&lng>=-73&&lng<=-53;
-      for(const dia of parsed.dias||[]){
-        for(const p of dia.paradas||[]){
+      const diasResultado=[];
+      let contextoPrevio=null;
+      const presTotal={combustible:0,alojamiento:0,comida:0,extras:0,total:0};
+      for(let d=1;d<=totalDias;d++){
+        setProgresoDia({actual:d,total:totalDias});
+        const parsedDia=await generarDia(opcion,d,totalDias,contextoPrevio);
+        for(const p of parsedDia.paradas){
           if(!esAR(p.lat,p.lng)){
             const coord=await geocodeNominatim(p.nombre+", Argentina");
             if(coord){p.lat=coord.lat;p.lng=coord.lng;}
             await sleep(1100); // respetar límite de 1 req/seg de Nominatim
           }
         }
+        diasResultado.push({dia:d,titulo:parsedDia.titulo||`Día ${d}`,kmDelDia:parsedDia.kmDelDia||0,paradas:parsedDia.paradas});
+        const pd=parsedDia.presupuestoDia||{};
+        presTotal.combustible+=pd.combustible||0;
+        presTotal.alojamiento+=pd.alojamiento||0;
+        presTotal.comida+=pd.comida||0;
+        presTotal.extras+=pd.extras||0;
+        const ultima=parsedDia.paradas[parsedDia.paradas.length-1];
+        contextoPrevio={nombre:ultima?.nombre,hora:ultima?.horaSalida||ultima?.horaLlegada};
       }
-      const completa={...opcion,dias:parsed.dias,presupuesto:parsed.presupuesto||null};
+      presTotal.total=presTotal.combustible+presTotal.alojamiento+presTotal.comida+presTotal.extras;
+      const completa={...opcion,dias:diasResultado,presupuesto:presTotal};
       setOpcionSel(completa);
       LS.set("opcionSel",completa);
       setCompletadas([]);
       setTab("mapa");
     }catch(e){alert("Error: "+e.message);}
-    setLoadingDetalle(false);setGenerandoIdx(null);
+    setLoadingDetalle(false);setGenerandoIdx(null);setProgresoDia(null);
   };
 
   const iniciarViaje=()=>{
@@ -1234,7 +1257,7 @@ JSON: {"presupuesto":{"combustible":0,"alojamiento":0,"comida":0,"extras":0,"tot
         <PantallaMapa viaje={viaje} opcionSel={opcionSel} posGPS={posGPS} estado={estado}/>
       </div>
       {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} clima={clima} equipaje={equipaje} setEquipaje={setEquipaje} completadas={completadas} onCompletar={completarParada} onNuevo={()=>setModal("viaje")} onEditarViaje={abrirEditarViaje} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} onCompartir={compartirWhatsApp} setTab={setTab} onReintentar={()=>buscarIA(viaje)}/>}
-      {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle} generandoIdx={generandoIdx} onEliminarParada={eliminarParada} onEditarParada={abrirEditarParada} onMoverParada={moverParada} onAbrirAgregarParada={()=>setModal("parada")} onCompartir={compartirWhatsApp}/>}
+      {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle} generandoIdx={generandoIdx} progresoDia={progresoDia} onEliminarParada={eliminarParada} onEditarParada={abrirEditarParada} onMoverParada={moverParada} onAbrirAgregarParada={()=>setModal("parada")} onCompartir={compartirWhatsApp}/>}
       {tab==="gastos"    &&<PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
       {tab==="historial" &&<PantallaHistorial historial={historial} onEliminar={id=>setHistorial(p=>p.filter(h=>h.id!==id))}/>}
       {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode}/>}

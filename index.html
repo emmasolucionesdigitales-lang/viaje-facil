@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.0";
+const VERSION="8.1";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -97,6 +97,21 @@ function haversineKm(lat1,lng1,lat2,lng2){
   const dLng=(lng2-lng1)*Math.PI/180;
   const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// Normaliza texto para comparar nombres de lugares sin importar tildes/mayúsculas.
+function normTxt(s){
+  return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+}
+// Intenta encajar el nombre que eligió la IA con un lugar REAL (de OpenStreetMap) de la lista de candidatos.
+// Si encaja, usamos las coordenadas reales del candidato (nunca las que "adivinó" el modelo).
+function matchPOI(nombreElegido,candidatos){
+  if(!nombreElegido||!candidatos?.length) return null;
+  const t=normTxt(nombreElegido);
+  let m=candidatos.find(c=>normTxt(c.nombre)===t);
+  if(m) return m;
+  m=candidatos.find(c=>normTxt(c.nombre).includes(t)||t.includes(normTxt(c.nombre)));
+  return m||null;
 }
 
 // Llama a Groq con reintento automático si hay rate-limit temporal (respeta el tiempo de espera que sugiere la API).
@@ -157,6 +172,47 @@ async function getClima(lat,lng,fIni,fFin){
     if(d.daily) return d.daily;
   }catch{}
   return null;
+}
+
+// ── OVERPASS (datos reales de OpenStreetMap: miradores, historia, cascadas, hoteles, camping, restaurantes) ──
+async function overpassQuery(ql){
+  try{
+    const r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:"data="+encodeURIComponent(ql)});
+    if(!r.ok) return [];
+    const d=await r.json();
+    return d.elements||[];
+  }catch{ return []; }
+}
+function poiNombre(el){ return el.tags?.name||el.tags?.["name:es"]||null; }
+
+// Busca lugares turísticos REALES cerca del punto medio del tramo del día, y hoteles/camping/restaurantes REALES
+// cerca de la ciudad donde termina el día. Todo en UNA sola consulta a Overpass para no demorar demasiado.
+async function buscarPOIsDelDia(midLat,midLng,radioAtr,hLat,hLng){
+  if(!midLat||!midLng) return {atractivos:[],alojamientos:[],restaurantes:[]};
+  const rA=Math.round(radioAtr), rH=hLat?20000:0, rR=hLat?15000:0;
+  const ql=`[out:json][timeout:25];(
+    node["tourism"~"viewpoint|attraction|museum|artwork|zoo|gallery"](around:${rA},${midLat},${midLng});
+    node["historic"](around:${rA},${midLat},${midLng});
+    node["natural"~"waterfall|peak|cave_entrance"](around:${rA},${midLat},${midLng});
+    ${hLat?`node["tourism"~"hotel|hostel|guest_house|camp_site|chalet"](around:${rH},${hLat},${hLng});`:""}
+    ${hLat?`node["amenity"~"restaurant|fast_food|cafe"](around:${rR},${hLat},${hLng});`:""}
+  );out center 120;`;
+  const els=await overpassQuery(ql);
+  const atractivos=[],alojamientos=[],restaurantes=[];
+  for(const e of els){
+    const nombre=poiNombre(e); if(!nombre) continue;
+    const lat=e.lat??e.center?.lat, lng=e.lon??e.center?.lon;
+    if(!lat||!lng) continue;
+    const tg=e.tags||{};
+    if(tg.tourism&&["hotel","hostel","guest_house","camp_site","chalet"].includes(tg.tourism)){
+      alojamientos.push({nombre,lat,lng,tipo:tg.tourism==="camp_site"?"camping":tg.tourism==="guest_house"?"hostel":tg.tourism==="chalet"?"cabaña":"hotel"});
+    } else if(tg.amenity&&["restaurant","fast_food","cafe"].includes(tg.amenity)){
+      restaurantes.push({nombre,lat,lng});
+    } else {
+      atractivos.push({nombre,lat,lng,cat:tg.tourism||tg.historic||tg.natural||"lugar"});
+    }
+  }
+  return {atractivos:atractivos.slice(0,25),alojamientos:alojamientos.slice(0,15),restaurantes:restaurantes.slice(0,15)};
 }
 
 const navegarA=(lat,lng,nombre)=>{
@@ -261,6 +317,7 @@ function Parada({p,isLast,isFirst,onEliminar,onEditar,onMover,clave,completada,o
         <div style={{fontSize:12,color:"var(--text-soft)",marginTop:2}}>{t.label}{p.horaSalida?` · Sale: ${p.horaSalida}`:""}{p.duracion?` · ${p.duracion}`:""}</div>
         {(p.kmDesdeAnterior||p.tiempoManejo)&&<div style={{fontSize:11,color:"#a0aec0",marginTop:2}}>📏 {p.kmDesdeAnterior||""}{p.tiempoManejo?` · ⏱ ${p.tiempoManejo}`:""}</div>}
         {p.descripcion&&<div style={{fontSize:13,color:"var(--text)",marginTop:4,lineHeight:1.4}}>{p.descripcion}</div>}
+        {p.verificado&&<div style={{fontSize:11,color:"#276749",marginTop:4,fontWeight:"bold"}}>✅ Lugar verificado (OpenStreetMap)</div>}
         {!p.lat&&<div style={{fontSize:11,color:"#dd6b20",marginTop:4}}>📍 Sin ubicación exacta verificada (no aparece en el mapa)</div>}
         <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
           {p.lat&&p.lng&&<button onClick={()=>navegarA(p.lat,p.lng,p.nombre)} style={{background:"#2b6cb018",color:"#2b6cb0",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold"}}>🧭 Navegar</button>}
@@ -273,14 +330,14 @@ function Parada({p,isLast,isFirst,onEliminar,onEditar,onMover,clave,completada,o
           <div style={{marginTop:8}}>
             <button onClick={()=>setOpenA(o=>!o)} style={{background:"#2d374818",color:"#2d3748",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold",width:"100%",textAlign:"left"}}>🏨 {openA?"Ocultar":"Ver"} hospedajes y camping ({p.alojamientos.length}) {openA?"▲":"▼"}</button>
             {openA&&(<>
-            <div style={{fontSize:10,color:"#a0aec0",marginTop:4}}>⚠️ Sugerencias de IA — verificá disponibilidad y precio real</div>
+            <div style={{fontSize:10,color:"#a0aec0",marginTop:4}}>⚠️ Precios son sugerencias de IA — verificá disponibilidad y precio real</div>
             {p.alojamientos.map((a,i)=>(
               <div key={i} style={{marginTop:6,padding:10,background:i===0?"#f0fff4":i===1?"#fffbeb":"#f7fafc",borderRadius:10,border:`1px solid ${i===0?"#9ae6b4":i===1?"#f6e05e":"#e2e8f0"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
                   <span style={{fontWeight:"bold",fontSize:13,color:"#2d3748"}}>{ALOJ_ICON[a.tipo]||"🏨"} {a.nombre}</span>
                   <span style={{fontSize:12,fontWeight:"bold",color:i===0?"#276749":i===1?"#744210":"#4a5568"}}>{i===0?"💚 más barato":i===1?"💛":"💜"} {a.precio}</span>
                 </div>
-                {a.tipo&&<div style={{fontSize:11,color:"#a0aec0",textTransform:"capitalize"}}>{a.tipo}</div>}
+                {a.tipo&&<div style={{fontSize:11,color:"#a0aec0",textTransform:"capitalize"}}>{a.tipo}{a.lat?" · ✅ verificado":""}</div>}
                 <div style={{fontSize:12,color:"#4a5568",marginTop:3}}>{a.descripcion}</div>
               </div>
             ))}
@@ -291,7 +348,7 @@ function Parada({p,isLast,isFirst,onEliminar,onEditar,onMover,clave,completada,o
           <div style={{marginTop:8}}>
             <button onClick={()=>setOpenR(o=>!o)} style={{background:"#ed893618",color:"#c05621",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold",width:"100%",textAlign:"left"}}>🍽️ {openR?"Ocultar":"Ver"} dónde comer ({p.restaurantes.length}) {openR?"▲":"▼"}</button>
             {openR&&(<>
-            <div style={{fontSize:10,color:"#a0aec0",marginTop:4}}>⚠️ Sugerencias de IA — verificá disponibilidad y precio real</div>
+            <div style={{fontSize:10,color:"#a0aec0",marginTop:4}}>⚠️ Precios son sugerencias de IA — verificá disponibilidad y precio real</div>
             {p.restaurantes.map((r,i)=>(
               <div key={i} style={{marginTop:6,padding:10,background:i===0?"#fff7ed":i===1?"#fffbeb":"#f7fafc",borderRadius:10,border:`1px solid ${i===0?"#fed7aa":i===1?"#f6e05e":"#e2e8f0"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
@@ -315,7 +372,7 @@ function ModalViaje({fV,setFV,onCrear,onCerrar,editando}){
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
         <div style={{fontWeight:"bold",fontSize:19,color:"var(--text)"}}>{editando?"✏️ Editar Viaje":"🚗 Planificar Viaje"}</div>
-        <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:8}}>{editando?"Estos cambios no regeneran el itinerario ya creado. Si cambiás fechas o destino, revisá el itinerario después.":"La IA genera itinerarios con horarios, atracciones, restaurantes y hospedaje"}</div>
+        <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:8}}>{editando?"Estos cambios no regeneran el itinerario ya creado. Si cambiás fechas o destino, revisá el itinerario después.":"La IA busca lugares reales (OpenStreetMap) y arma un itinerario con horarios, atracciones, restaurantes y hospedaje"}</div>
         <label style={S.lbl}>📍 Ciudad de origen — tu casa *</label>
         <input style={S.inp} placeholder="Ej: San Miguel de Tucumán" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
         <label style={S.lbl}>🏁 Ciudad de destino *</label>
@@ -490,7 +547,7 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
       <div style={{padding:16}}>
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>🤖 API Key de Groq (gratis)</div>
-          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>ℹ️ El itinerario se genera en dos pasos (plan macro + detalle día por día), priorizando lugares reales de interés (con desvíos máximos de 60 min en ruta, y radio de 40km alrededor del destino) y opciones de camping/hospedaje económico.</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>ℹ️ Antes de generar cada día, la app busca lugares reales verificados (OpenStreetMap: miradores, historia, cascadas, hoteles, camping, restaurantes) cerca de la ruta y del destino, y la IA arma el itinerario priorizando esos lugares reales — así se evitan ubicaciones inventadas o muy lejanas.</div>
           {apiKey&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Clave guardada — IA lista</div>}
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
@@ -725,7 +782,7 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
           const abierto=expandido===oi;
           const generandoEsta=loadingDetalle&&generandoIdx===oi;
           const etiquetaGenerando=progresoDia
-            ?(progresoDia.actual===0?"🧭 Planificando recorrido...":`⏳ Generando día ${progresoDia.actual}/${progresoDia.total}...`)
+            ?(progresoDia.actual===0?"🧭 Planificando recorrido...":`⏳ Buscando lugares reales y armando día ${progresoDia.actual}/${progresoDia.total}...`)
             :"⏳ Generando...";
           return(
             <div key={oi} style={{...S.card,border:`2px solid ${sel?c:"var(--border)"}`,background:sel?`${c}06`:"var(--card-bg)",marginBottom:16}}>
@@ -778,7 +835,7 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                     </div>
                   )}
                   <div style={{marginTop:12,padding:10,background:"#fffbeb",borderRadius:10,fontSize:12,color:"#744210"}}>
-                    💡 En ruta, los lugares para conocer no implican más de 60 min de desvío. En días de estadía en destino, se buscan lugares en un radio de al menos 40km. Los nombres de hoteles/restaurantes/precios son sugerencias y conviene verificarlos.
+                    💡 La app busca lugares reales verificados (OpenStreetMap) cerca de esta ruta y del destino: miradores, sitios históricos, cascadas, hoteles, camping y restaurantes. En ruta, sin más de 60 min de desvío; en destino, radio de al menos 40km. Los precios son estimaciones de IA y conviene verificarlos.
                   </div>
                 </div>
               )}
@@ -880,7 +937,7 @@ function PantallaMapa({viaje,opcionSel,posGPS,estado}){
                           {p.duracion?` · ⏳ ${p.duracion}`:""}
                           {p.kmDesdeAnterior?` · 📏 ${p.kmDesdeAnterior}`:""}
                           {p.tiempoManejo?` · 🚗 ${p.tiempoManejo}`:""}
-                          {!p._num?" · 📍 sin ubicación verificada":""}
+                          {p.verificado?" · ✅ verificado":!p._num?" · 📍 sin ubicación verificada":""}
                         </div>
                         {p.descripcion&&<div style={{fontSize:12,color:"#4a5568",marginTop:3,lineHeight:1.35}}>{p.descripcion}</div>}
                         {(p.alojamientos?.length>0||p.restaurantes?.length>0)&&(
@@ -1150,8 +1207,9 @@ JSON: {"dias":[{"dia":1,"desde":"str","hasta":"str","kmDia":0,"tipo":"ida|estadi
   };
 
   // Genera UN día del itinerario (llamada liviana, evita el tope de tokens de Groq).
-  // Recibe el tramo ya fijado por el esqueleto (desde/hasta/kmDia) para no perder coherencia geográfica.
-  const generarDia=async(opcion,diaNum,totalDias,esqueletoDia,contextoPrevio)=>{
+  // Recibe el tramo ya fijado por el esqueleto (desde/hasta/kmDia) y los lugares REALES cercanos (OSM),
+  // para que la IA elija entre datos verificados en vez de inventar coordenadas/nombres.
+  const generarDia=async(opcion,diaNum,totalDias,esqueletoDia,contextoPrevio,pois)=>{
     const horaLimite=calcHoraLimite(viaje.fDevol,viaje.buffer);
     const esPrimero=diaNum===1;
     const esUltimo=diaNum===totalDias;
@@ -1168,22 +1226,29 @@ JSON: {"dias":[{"dia":1,"desde":"str","hasta":"str","kmDia":0,"tipo":"ida|estadi
     const presu=viaje.presupuesto||"economico";
     const presuTxt=presu==="economico"?"ECONÓMICO: priorizá camping, hostels y hospedaje muy barato, comida casera/rotisería, actividades gratuitas (miradores, plazas, senderos)."
       :presu==="confort"?"CONFORT: hospedaje de buen nivel y restaurantes de calidad, sin restricción de precio.":"MEDIO: mezclá opciones económicas con alguna más cómoda.";
+    const listaAtr=pois?.atractivos?.length?pois.atractivos.map(a=>`${a.nombre} (${a.cat})`).join("; "):"(sin datos verificados cercanos — usá lugares reales y bien conocidos de la zona, no inventes)";
+    const listaAloj=pois?.alojamientos?.length?pois.alojamientos.map(a=>`${a.nombre} [${a.tipo}]`).join("; "):"(sin datos verificados cercanos — usá alojamientos reales y conocidos de la zona)";
+    const listaRest=pois?.restaurantes?.length?pois.restaurantes.map(r=>r.nombre).join("; "):"(sin datos verificados cercanos — usá restaurantes reales y conocidos de la zona)";
     const data=await callGroq(apiKey,[
       {role:"system",content:"Sos un guia turistico local experto en Argentina. Respondes solo JSON valido y compacto."},
       {role:"user",content:`Planificá SOLO el día ${diaNum} de ${totalDias} de un viaje en auto: "${opcion.nombre}" (rutas: ${opcion.rutasUsadas?.join(", ")||viaje.ruta}).
 Tramo fijo de este día: DESDE ${desde} HASTA ${hasta}${kmDia?` (aprox ${kmDia} km)`:""}. ${inicioTxt} ${finTxt}
 ${viaje.pers} personas. Presupuesto: ${presuTxt}${viaje.notas?" Preferencias: "+viaje.notas:""}
 
-OBJETIVO PRINCIPAL: aprovechar al máximo el tiempo disponible del día, incluyendo TANTOS lugares reales de interés como el tiempo/km lo permitan (miradores, pueblos, reservas naturales, formaciones geológicas, museos, cascadas, viñedos, etc — SIEMPRE con nombre real y propio, por su vista o valor histórico/cultural). PROHIBIDO usar paradas genéricas sin nombre real como "Tránsito por Ruta X" o "paisaje de llanura" — si hay un tramo sin atractivos, saltalo directo a la siguiente parada real, no inventes una parada vacía solo para llenar.
+LUGARES TURÍSTICOS REALES Y VERIFICADOS CERCA DE ESTE TRAMO (priorizá elegir de esta lista, son datos reales de mapas — si necesitás más podés sumar otros bien conocidos, siempre con nombre real): ${listaAtr}
+ALOJAMIENTOS REALES CERCANOS (elegí 3 de esta lista si hay suficientes, de menor a mayor precio): ${listaAloj}
+RESTAURANTES REALES CERCANOS (elegí 3 de esta lista si hay suficientes): ${listaRest}
 
-REGLA DE DESVÍO EN RUTA: los atractivos turísticos que impliquen desviarte de la ruta directa entre ${desde} y ${hasta} NO deben sumar más de 60 minutos extra de manejo (ida y vuelta) respecto del camino directo — nada de desvíos grandes que arruinen el horario del día.
-${tipoDia==="estadia"?`REGLA DE ESTADÍA: hoy es día de estadía en ${hasta} (ya llegaste al destino). Buscá lugares para conocer en un radio de AL MENOS 40km alrededor de ${hasta} — no te limites solo al centro, explorá los alrededores.`:""}
+OBJETIVO PRINCIPAL: aprovechar al máximo el tiempo disponible del día, incluyendo TANTOS lugares reales de interés como el tiempo/km lo permitan (por su vista o valor histórico/natural). PROHIBIDO usar paradas genéricas sin nombre real como "Tránsito por Ruta X" o "paisaje de llanura" — si hay un tramo sin atractivos, saltalo directo a la siguiente parada real, no inventes una parada vacía solo para llenar.
 
-Reglas adicionales: respetar estrictamente el tramo desde/hasta indicado, sin saltar a otros tramos; TODAS las paradas de este día (incluyendo hoteles y restaurantes) deben estar geográficamente ubicadas ENTRE ${desde} y ${hasta}, o en ${hasta} si el día termina ahí, o dentro del radio de 40km si es día de estadía — nunca en otra provincia o ciudad lejana; velocidades reales (autopista 110-120, ruta 80-110, montaña 40-60); indicar kmDesdeAnterior y tiempoManejo por tramo; descanso cada ~2hs de manejo (parada real, no genérica); parada de combustible antes de quedarse sin nafta; comidas en horario real (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h) con 3 restaurantes reales y conocidos de menor a mayor precio, ubicados en ${hasta} o en el tramo; si el día termina en una localidad para pernoctar, agregar parada "dormir" con 3 opciones de alojamiento de menor a mayor precio en ${hasta}, cada una con campo "tipo" (camping, hostel, hotel o cabaña) — incluí SIEMPRE al menos 1 camping u opción muy económica si existe en la zona; descripciones BREVES (1 línea) mencionando por qué vale la pena (vista, historia, naturaleza, etc); lat/lng reales y precisos de Argentina, coherentes con la ubicación real de cada lugar.
+REGLA DE DESVÍO EN RUTA: los atractivos que impliquen desviarte de la ruta directa entre ${desde} y ${hasta} NO deben sumar más de 60 minutos extra de manejo (ida y vuelta) respecto del camino directo.
+${tipoDia==="estadia"?`REGLA DE ESTADÍA: hoy es día de estadía en ${hasta} (ya llegaste al destino). Buscá lugares para conocer en un radio de AL MENOS 40km alrededor de ${hasta} — no te limites solo al centro.`:""}
+
+Reglas adicionales: respetar estrictamente el tramo desde/hasta indicado; TODAS las paradas deben estar geográficamente ubicadas ENTRE ${desde} y ${hasta}, o en ${hasta} si el día termina ahí, o dentro del radio de 40km si es día de estadía; velocidades reales (autopista 110-120, ruta 80-110, montaña 40-60); indicar kmDesdeAnterior y tiempoManejo por tramo; descanso cada ~2hs de manejo; parada de combustible antes de quedarse sin nafta; comidas en horario real (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h); si el día termina en una localidad para pernoctar, agregar parada "dormir" con 3 opciones de alojamiento de menor a mayor precio, cada una con campo "tipo" (camping, hostel, hotel o cabaña) — incluí SIEMPRE al menos 1 camping u opción muy económica si figura en la lista o existe en la zona; descripciones BREVES (1 línea) mencionando por qué vale la pena (vista, historia, naturaleza); lat/lng: si el lugar está en las listas de arriba usá esas coordenadas aproximadas, si no, poné tu mejor estimación real de Argentina.
 Tipos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
 
 JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamiento":0,"comida":0,"extras":0},"paradas":[{"nombre":"str","tipo":"str","descripcion":"str breve","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[{"nombre":"str","tipo":"camping|hostel|hotel|cabaña","precio":"str","descripcion":"str"}],"restaurantes":[]}]}`}
-    ],2700,0.3);
+    ],2900,0.3);
     let parsed;
     try{
       parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,""));
@@ -1208,27 +1273,59 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
       for(let d=1;d<=totalDias;d++){
         setProgresoDia({actual:d,total:totalDias});
         const esqueletoDia=esqueleto[d-1];
-        const parsedDia=await generarDia(opcion,d,totalDias,esqueletoDia,contextoPrevio);
+        const tipoDia=esqueletoDia?.tipo||(d===totalDias?"vuelta":"ida");
 
-        // Ancla geográfica del día: geocodificamos la ciudad donde termina el día (o donde arranca)
-        // para poder detectar y descartar paradas cuyas coordenadas queden absurdamente lejos.
-        const anclaTxt=(esqueletoDia?.hasta||esqueletoDia?.desde||viaje.destino)+", Argentina";
-        let ancla=await geocodeNominatim(anclaTxt);
-        await sleep(1100);
+        // Geocodificamos desde/hasta del día para anclar la búsqueda de lugares REALES (OSM),
+        // y para poder descartar después cualquier coordenada que el modelo invente muy lejos.
+        const desdeTxt=(esqueletoDia?.desde||viaje.origen)+", Argentina";
+        const hastaTxt=(esqueletoDia?.hasta||viaje.destino)+", Argentina";
+        const desdeCoord=await geocodeNominatim(desdeTxt); await sleep(1100);
+        const hastaCoord=await geocodeNominatim(hastaTxt); await sleep(1100);
+        const ancla=hastaCoord||desdeCoord;
+
+        let poisDelDia={atractivos:[],alojamientos:[],restaurantes:[]};
+        if(desdeCoord&&hastaCoord){
+          const distDD=haversineKm(desdeCoord.lat,desdeCoord.lng,hastaCoord.lat,hastaCoord.lng);
+          const midLat=(desdeCoord.lat+hastaCoord.lat)/2, midLng=(desdeCoord.lng+hastaCoord.lng)/2;
+          const radioAtr=tipoDia==="estadia"?40000:Math.min(60000,Math.max(25000,distDD*500+15000));
+          poisDelDia=await buscarPOIsDelDia(midLat,midLng,radioAtr,hastaCoord.lat,hastaCoord.lng);
+        } else if(ancla){
+          poisDelDia=await buscarPOIsDelDia(ancla.lat,ancla.lng,40000,ancla.lat,ancla.lng);
+        }
+
+        const parsedDia=await generarDia(opcion,d,totalDias,esqueletoDia,contextoPrevio,poisDelDia);
 
         for(const p of parsedDia.paradas){
-          let necesitaGeocode=!esAR(p.lat,p.lng);
-          if(!necesitaGeocode&&ancla&&haversineKm(p.lat,p.lng,ancla.lat,ancla.lng)>150){
-            necesitaGeocode=true; // coordenada del modelo demasiado lejos del tramo del día → sospechosa
-          }
-          if(necesitaGeocode){
-            const coord=await geocodeNominatim(`${p.nombre}, ${esqueletoDia?.hasta||esqueletoDia?.desde||viaje.destino}, Argentina`);
-            await sleep(1100);
-            if(coord&&(!ancla||haversineKm(coord.lat,coord.lng,ancla.lat,ancla.lng)<150)){
-              p.lat=coord.lat;p.lng=coord.lng;
-            }else{
-              p.lat=null;p.lng=null; // mejor sin marcador que un marcador incorrecto en el mapa
+          let match=null;
+          if(p.tipo==="turistico"||p.tipo==="mirador") match=matchPOI(p.nombre,poisDelDia.atractivos);
+          if(match){
+            p.lat=match.lat; p.lng=match.lng; p.verificado=true;
+          } else {
+            let necesitaGeocode=!esAR(p.lat,p.lng);
+            if(!necesitaGeocode&&ancla&&haversineKm(p.lat,p.lng,ancla.lat,ancla.lng)>150) necesitaGeocode=true;
+            if(necesitaGeocode){
+              const coord=await geocodeNominatim(`${p.nombre}, ${hastaTxt}`);
+              await sleep(1100);
+              if(coord&&(!ancla||haversineKm(coord.lat,coord.lng,ancla.lat,ancla.lng)<150)){
+                p.lat=coord.lat;p.lng=coord.lng;
+              }else{
+                p.lat=null;p.lng=null; // mejor sin marcador que un marcador incorrecto en el mapa
+              }
             }
+          }
+          // Grounding de alojamientos y restaurantes: si el nombre matchea con un lugar real cercano,
+          // reemplazamos el nombre por el real y guardamos sus coordenadas verificadas.
+          if(p.alojamientos?.length){
+            p.alojamientos=p.alojamientos.map(a=>{
+              const am=matchPOI(a.nombre,poisDelDia.alojamientos);
+              return am?{...a,nombre:am.nombre,lat:am.lat,lng:am.lng}:a;
+            });
+          }
+          if(p.restaurantes?.length){
+            p.restaurantes=p.restaurantes.map(r=>{
+              const rm=matchPOI(r.nombre,poisDelDia.restaurantes);
+              return rm?{...r,nombre:rm.nombre}:r;
+            });
           }
         }
         diasResultado.push({dia:d,titulo:parsedDia.titulo||`Día ${d}`,kmDelDia:parsedDia.kmDelDia||0,paradas:parsedDia.paradas});

@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="7.5";
+const VERSION="7.6";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -89,6 +89,14 @@ function calcHoraLimite(fDevol,bufferHoras){
   return d.toLocaleString("es-AR",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function haversineKm(lat1,lng1,lat2,lng2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
 
 // Llama a Groq con reintento automático si hay rate-limit temporal (respeta el tiempo de espera que sugiere la API).
 // reasoning_effort:"low" + include_reasoning:false evita que el modelo gaste tokens "pensando" en silencio.
@@ -244,6 +252,7 @@ function Parada({p,isLast,isFirst,onEliminar,onEditar,onMover,clave,completada,o
         <div style={{fontSize:12,color:"var(--text-soft)",marginTop:2}}>{t.label}{p.horaSalida?` · Sale: ${p.horaSalida}`:""}{p.duracion?` · ${p.duracion}`:""}</div>
         {(p.kmDesdeAnterior||p.tiempoManejo)&&<div style={{fontSize:11,color:"#a0aec0",marginTop:2}}>📏 {p.kmDesdeAnterior||""}{p.tiempoManejo?` · ⏱ ${p.tiempoManejo}`:""}</div>}
         {p.descripcion&&<div style={{fontSize:13,color:"var(--text)",marginTop:4,lineHeight:1.4}}>{p.descripcion}</div>}
+        {!p.lat&&<div style={{fontSize:11,color:"#dd6b20",marginTop:4}}>📍 Sin ubicación exacta verificada (no aparece en el mapa)</div>}
         <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
           {p.lat&&p.lng&&<button onClick={()=>navegarA(p.lat,p.lng,p.nombre)} style={{background:"#2b6cb018",color:"#2b6cb0",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold"}}>🧭 Navegar</button>}
           {onEditar&&<button onClick={()=>onEditar(clave)} aria-label="Editar parada" style={{background:"#80568018",color:"#805ad5",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:"bold"}}>✏️ Editar</button>}
@@ -459,7 +468,7 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
       <div style={{padding:16}}>
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>🤖 API Key de Groq (gratis)</div>
-          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>ℹ️ El itinerario se genera en dos pasos: primero un plan macro día por día, y después el detalle de cada día por separado, para que funcione bien incluso en viajes largos con el plan gratuito de Groq.</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Se guarda solo en este celular/navegador, no se envía a ningún otro lado más que a Groq.<br/>📌 Conseguila en: <strong>console.groq.com</strong><br/>ℹ️ El itinerario se genera en dos pasos (plan macro + detalle día por día), y las ubicaciones se verifican contra la ciudad de cada día para que el mapa sea preciso.</div>
           {apiKey&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Clave guardada — IA lista</div>}
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
@@ -846,6 +855,7 @@ function PantallaMapa({viaje,opcionSel,posGPS,estado}){
                           {p.duracion?` · ⏳ ${p.duracion}`:""}
                           {p.kmDesdeAnterior?` · 📏 ${p.kmDesdeAnterior}`:""}
                           {p.tiempoManejo?` · 🚗 ${p.tiempoManejo}`:""}
+                          {!p._num?" · 📍 sin ubicación verificada":""}
                         </div>
                         {p.descripcion&&<div style={{fontSize:12,color:"#4a5568",marginTop:3,lineHeight:1.35}}>{p.descripcion}</div>}
                         {(p.alojamientos?.length>0||p.restaurantes?.length>0)&&(
@@ -1131,7 +1141,7 @@ JSON: {"dias":[{"dia":1,"desde":"str","hasta":"str","kmDia":0,"tipo":"ida|estadi
 Tramo fijo de este día: DESDE ${desde} HASTA ${hasta}${kmDia?` (aprox ${kmDia} km)`:""}. ${inicioTxt} ${finTxt}
 ${viaje.pers} personas.${viaje.notas?" Preferencias: "+viaje.notas:""}
 
-Reglas: respetar estrictamente el tramo desde/hasta indicado, sin saltar a otros tramos; velocidades reales (autopista 110-120, ruta 80-110, montaña 40-60); indicar kmDesdeAnterior y tiempoManejo por tramo; descanso cada ~2hs de manejo; parada de combustible antes de quedarse sin nafta; comidas en horario real (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h) con 3 restaurantes reales y conocidos de menor a mayor precio; si el día termina en una localidad para pernoctar, agregar parada "dormir" con 3 alojamientos reales de menor a mayor precio; descripciones BREVES (1 línea); lat/lng reales de Argentina.
+Reglas: respetar estrictamente el tramo desde/hasta indicado, sin saltar a otros tramos; TODAS las paradas de este día (incluyendo hoteles y restaurantes) deben estar geográficamente ubicadas ENTRE ${desde} y ${hasta}, o en ${hasta} si el día termina ahí — nunca en otra provincia o ciudad lejana; velocidades reales (autopista 110-120, ruta 80-110, montaña 40-60); indicar kmDesdeAnterior y tiempoManejo por tramo; descanso cada ~2hs de manejo; parada de combustible antes de quedarse sin nafta; comidas en horario real (desayuno 8h, almuerzo 13h, merienda 17h, cena 21h) con 3 restaurantes reales y conocidos de menor a mayor precio, ubicados en ${hasta} o en el tramo; si el día termina en una localidad para pernoctar, agregar parada "dormir" con 3 alojamientos reales de menor a mayor precio en ${hasta}; descripciones BREVES (1 línea); lat/lng reales y precisos de Argentina, coherentes con la ubicación real de cada lugar.
 Tipos: origen, ruta, descanso, comida, turistico, mirador, dormir, destino
 
 JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamiento":0,"comida":0,"extras":0},"paradas":[{"nombre":"str","tipo":"str","descripcion":"str breve","horaLlegada":"HH:MM","horaSalida":"HH:MM","duracion":"str","kmDesdeAnterior":"str","tiempoManejo":"str","lat":-26.8,"lng":-65.2,"alojamientos":[],"restaurantes":[]}]}`}
@@ -1161,11 +1171,26 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
         setProgresoDia({actual:d,total:totalDias});
         const esqueletoDia=esqueleto[d-1];
         const parsedDia=await generarDia(opcion,d,totalDias,esqueletoDia,contextoPrevio);
+
+        // Ancla geográfica del día: geocodificamos la ciudad donde termina el día (o donde arranca)
+        // para poder detectar y descartar paradas cuyas coordenadas queden absurdamente lejos.
+        const anclaTxt=(esqueletoDia?.hasta||esqueletoDia?.desde||viaje.destino)+", Argentina";
+        let ancla=await geocodeNominatim(anclaTxt);
+        await sleep(1100);
+
         for(const p of parsedDia.paradas){
-          if(!esAR(p.lat,p.lng)){
-            const coord=await geocodeNominatim(p.nombre+", Argentina");
-            if(coord){p.lat=coord.lat;p.lng=coord.lng;}
-            await sleep(1100); // respetar límite de 1 req/seg de Nominatim
+          let necesitaGeocode=!esAR(p.lat,p.lng);
+          if(!necesitaGeocode&&ancla&&haversineKm(p.lat,p.lng,ancla.lat,ancla.lng)>150){
+            necesitaGeocode=true; // coordenada del modelo demasiado lejos del tramo del día → sospechosa
+          }
+          if(necesitaGeocode){
+            const coord=await geocodeNominatim(`${p.nombre}, ${esqueletoDia?.hasta||esqueletoDia?.desde||viaje.destino}, Argentina`);
+            await sleep(1100);
+            if(coord&&(!ancla||haversineKm(coord.lat,coord.lng,ancla.lat,ancla.lng)<150)){
+              p.lat=coord.lat;p.lng=coord.lng;
+            }else{
+              p.lat=null;p.lng=null; // mejor sin marcador que un marcador incorrecto en el mapa
+            }
           }
         }
         diasResultado.push({dia:d,titulo:parsedDia.titulo||`Día ${d}`,kmDelDia:parsedDia.kmDelDia||0,paradas:parsedDia.paradas});

@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.8";
+const VERSION="8.9";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -656,8 +656,8 @@ function ModalViaje({fV,setFV,onCrear,onCerrar,editando,origenFijo}){
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
         <div style={{fontWeight:"bold",fontSize:19,color:"var(--text)"}}>{editando?"✏️ Editar Viaje":"🚗 Planificar Viaje"}</div>
         <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:8}}>{editando?"Estos cambios no regeneran el itinerario ya creado. Si cambiás fechas o destino, revisá el itinerario después.":"La IA busca lugares reales (OpenStreetMap) y arma un itinerario con horarios, atracciones, restaurantes y hospedaje"}</div>
-        <label style={S.lbl}>📍 Ciudad de origen — tu casa *</label>
-        <input style={S.inp} placeholder="Ej: San Miguel de Tucumán" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
+        <label style={S.lbl}>📍 Ciudad o dirección real de origen (tu punto de partida) *</label>
+        <input style={S.inp} placeholder="Ej: San Miguel de Tucumán (no escribas 'casa', poné el nombre real del lugar)" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
         {origenFijo&&origenFijo!==fV.origen&&<button onClick={()=>setFV(p=>({...p,origen:origenFijo}))} style={{background:"none",border:"none",color:"#2b6cb0",cursor:"pointer",fontSize:12,fontWeight:"bold",padding:"2px 0 6px",textAlign:"left"}}>📍 Usar mi punto de partida guardado ({origenFijo})</button>}
         <label style={S.lbl}>🏁 Ciudad de destino *</label>
         <input style={S.inp} placeholder="Ej: San Fernando del Valle de Catamarca" value={fV.destino} onChange={e=>setFV(p=>({...p,destino:e.target.value}))}/>
@@ -1581,6 +1581,13 @@ JSON: {"destinos":[{"nombre":"str","provincia":"str","motivo":"str breve, 1 fras
     setLoadingIA(true);setOpciones([]);setIaError("");
     const horaLimite=calcHoraLimite(v.fDevol,v.buffer);
     try{
+      // Verificamos ANTES de llamar a la IA que origen y destino sean lugares reales y
+      // ubicables en el mapa (ej: "casa" o un apodo no sirven — hace falta el nombre real
+      // de la ciudad/localidad/dirección) para poder anclar todo lo demás a datos reales.
+      const origCoordChk=await geocodeNominatim(v.origen+", Argentina"); await sleep(1100);
+      const destCoordChk=await geocodeNominatim(v.destino+", Argentina"); await sleep(1100);
+      if(!origCoordChk) throw new Error(`No encontré "${v.origen}" en el mapa. Escribí el nombre real de tu ciudad/localidad o una dirección (no "casa" ni apodos).`);
+      if(!destCoordChk) throw new Error(`No encontré "${v.destino}" en el mapa. Escribí el nombre real de la ciudad/localidad de destino.`);
       const data=await callGroq(apiKey,[
         {role:"system",content:"Sos un experto en turismo argentino. Respondes solo JSON valido."},
         {role:"user",content:`Planificacion de viaje EFICIENTE en auto: ${v.origen} → ${v.destino}. Ruta preferida del usuario: ${v.ruta||"a definir por vos"}. ${v.pers} personas. Salida desde tu casa: ${fmtHora(v.horaSalidaCasa||v.fRetiro)}. LIMITE de regreso a tu casa (para lavar el auto y devolverlo): ${horaLimite}. Prioridad de presupuesto: ${v.presupuesto||"economico"}.${v.notas?" Preferencias: "+v.notas:""}
@@ -1610,8 +1617,7 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
       // y el tiempo de manejo REALES de cada una contra OSRM (pasando por los lugares de
       // referencia que sugirió como waypoints), y se pisan los valores que dio la IA.
       try{
-        const origCoord=await geocodeNominatim(v.origen+", Argentina"); await sleep(1100);
-        const destCoord=await geocodeNominatim(v.destino+", Argentina"); await sleep(1100);
+        const origCoord=origCoordChk,destCoord=destCoordChk;
         if(origCoord&&destCoord){
           for(const op of parsed.opciones){
             const viaCoords=[];
@@ -1830,7 +1836,9 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
       setProgresoDia({actual:0,total:totalDias});
       // Esqueleto REAL anclado a OSRM (con fallback a la IA si falla el geocoding/OSRM).
       let esqueletoInfo=await construirEsqueletoReal(opcion,totalDias);
+      const sinAnclarReal=!esqueletoInfo;
       if(!esqueletoInfo) esqueletoInfo=await generarEsqueletoIA(opcion,totalDias);
+      if(sinAnclarReal) setTimeout(()=>alert(`⚠️ No pude verificar "${viaje.origen}" → "${viaje.destino}" contra el mapa real (nombre no encontrado o sin ruta calculable). El itinerario se generó con estimaciones de la IA, sin garantía de que las distancias sean correctas. Revisá que el origen y destino sean nombres reales de ciudad/localidad.`),300);
       const esqueleto=esqueletoInfo.dias;
       const diasResultado=[];
       let contextoPrevio=null;

@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.4";
+const VERSION="8.7";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -78,7 +78,10 @@ const TABS=[
 ];
 const WMO={0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫️",48:"🌫️",51:"🌦️",53:"🌦️",55:"🌧️",61:"🌧️",63:"🌧️",65:"⛈️",80:"🌦️",81:"🌧️",82:"⛈️",95:"⛈️",96:"⛈️",99:"⛈️"};
 const ALOJ_ICON={camping:"⛺",hostel:"🛏️",hotel:"🏨",cabaña:"🏡"};
+const TIPO_SUG_ICON={"montaña":"⛰️",naturaleza:"🌿",playa:"🏖️",ciudad:"🏙️",pueblo:"🏘️",cultura:"🏛️"};
 const MAX_KM_DIA=350; // km de manejo realistas por día (base del esqueleto real del viaje)
+const HORA_INICIO_DIA=8; // hora a la que se asume que arranca un día de manejo intermedio
+const HORA_CORTE_NOCTURNA=20; // hora límite razonable para dejar de manejar y parar a dormir
 
 const fmtM  =n=>"$"+(Math.round(n)||0).toLocaleString("es-AR");
 const fmtDt =s=>{try{return new Date(s).toLocaleString("es-AR",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});}catch{return "—";}};
@@ -331,6 +334,77 @@ function toleranciaPorTipoCamino(tipo){
   if(tipo==="asfaltada") return 50;
   return 40; // tipo de camino desconocido/mixto: valor intermedio
 }
+
+// ── GESTIÓN DE DÍAS Y DISTANCIAS SEGÚN LAS HORAS REALMENTE DISPONIBLES ────
+// Un viaje de fin de semana (ej: retiro viernes a la tarde, devolución lunes al mediodía)
+// NO tiene los mismos km/día disponibles que uno de una semana completa (retiro lunes
+// temprano, devolución domingo a la noche): el primer día suele arrancar tarde (después
+// del trabajo) y el último día hay que volver temprano. Esto se calcula siempre a partir
+// de las fechas/horas reales de retiro y devolución que cargó el usuario — no hace falta
+// que el usuario diga "es de fin de semana", la propia fecha lo determina.
+// Velocidad efectiva de viaje (incluyendo paradas), a partir de la velocidad real de manejo
+// que devolvió OSRM para la ruta completa.
+function velocidadEfectivaKmH(distKm,durMinManejo){
+  if(!distKm||!durMinManejo) return 55;
+  const velManejo=distKm/(durMinManejo/60);
+  return Math.min(80,Math.max(35,velManejo*0.72)); // 0.72: castiga el tiempo que se va en paradas
+}
+// Km que se pueden recorrer razonablemente el DÍA 1 (desde la hora real de salida de casa
+// hasta una hora prudente para parar a dormir).
+function kmDisponiblesDia1(horaSalidaCasaISO,velEfectiva){
+  const salida=new Date(horaSalidaCasaISO);
+  const corte=new Date(salida); corte.setHours(HORA_CORTE_NOCTURNA,0,0,0);
+  if(corte<=salida) corte.setTime(salida.getTime()+90*60000); // salió después del corte: al menos 1.5hs
+  const horas=Math.max(1,(corte-salida)/3600000);
+  return Math.min(MAX_KM_DIA,Math.max(60,Math.round(horas*velEfectiva)));
+}
+// Fecha/hora en que arranca el día "totalDias" del itinerario (el mismo cálculo que usa
+// recalcularHorariosViaje: día 1 = hora real de salida de casa, días siguientes = 8:00 de
+// esa fecha + N días). OJO: esto puede NO coincidir con la fecha calendario de fDevol si la
+// devolución es de madrugada (ej: devolución lunes 03:00 en realidad se vive como "domingo
+// hasta la madrugada", no como "lunes a las 8"). Hay que usar SIEMPRE esta fecha, no la de
+// fDevol, para no subestimar por error las horas que quedan el último día.
+function inicioDelDia(fechaBaseISO,totalDias){
+  const fechaBase=new Date(fechaBaseISO);
+  if(totalDias<=1) return new Date(fechaBase);
+  const d=new Date(fechaBase);
+  d.setDate(d.getDate()+(totalDias-1));
+  d.setHours(HORA_INICIO_DIA,0,0,0);
+  return d;
+}
+// Km que se pueden recorrer razonablemente el ÚLTIMO día (desde que arranca ese día — según
+// inicioDelDia, NO según la fecha de fDevol — hasta la hora límite de vuelta).
+function kmDisponiblesUltimoDia(horaLimiteDate,inicioUltimoDia,velEfectiva){
+  const horas=Math.max(0.5,(horaLimiteDate-inicioUltimoDia)/3600000);
+  return Math.min(MAX_KM_DIA,Math.max(40,Math.round(horas*velEfectiva)));
+}
+// Reparte la distancia de IDA en días: el día 1 usa el cupo especial (puede ser chico si se
+// sale tarde), los siguientes usan el cupo normal (MAX_KM_DIA). Devuelve null si ni usando
+// todos los días disponibles alcanza para llegar.
+function repartirDiasIda(distKm,kmDia1,kmDiaNormal,maxDias){
+  const dias=[]; let restante=distKm,cum=0;
+  for(let i=0;i<maxDias&&restante>0.01;i++){
+    const cap=i===0?kmDia1:kmDiaNormal;
+    const tramo=Math.min(cap,restante);
+    cum+=tramo; dias.push({kmDia:Math.round(tramo),cumKm:cum}); restante-=tramo;
+  }
+  return restante>0.01?null:dias;
+}
+// Reparte la distancia de VUELTA en días: los primeros días usan el cupo normal, y el
+// ÚLTIMO día (el que llega a casa) usa el cupo especial (puede ser chico si hay que volver
+// temprano). Devuelve los días en orden cronológico, con cumKm = km ya recorridos de vuelta.
+function repartirDiasVuelta(distKm,kmDiaNormal,kmDiaUltimo,maxDias){
+  const inv=[]; let restante=distKm;
+  for(let i=0;i<maxDias&&restante>0.01;i++){
+    const cap=i===0?kmDiaUltimo:kmDiaNormal;
+    const tramo=Math.min(cap,restante);
+    inv.push(tramo); restante-=tramo;
+  }
+  if(restante>0.01) return null;
+  inv.reverse();
+  let cum=0;
+  return inv.map(kmDia=>{cum+=kmDia; return {kmDia:Math.round(kmDia),cumKm:cum};});
+}
 // Reverse-geocoding: nombre de la localidad real más cercana a un punto del trazo (para no
 // mostrar "Km 137" sino, por ejemplo, "Metán" o "Güemes").
 async function nombreLocalidadCercana(lat,lng){
@@ -576,7 +650,7 @@ function Parada({p,isLast,isFirst,onEliminar,onEditar,onMover,clave,completada,o
 }
 
 // ── MODALES ───────────────────────────────────────────────
-function ModalViaje({fV,setFV,onCrear,onCerrar,editando}){
+function ModalViaje({fV,setFV,onCrear,onCerrar,editando,origenFijo}){
   return(
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
@@ -584,6 +658,7 @@ function ModalViaje({fV,setFV,onCrear,onCerrar,editando}){
         <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:8}}>{editando?"Estos cambios no regeneran el itinerario ya creado. Si cambiás fechas o destino, revisá el itinerario después.":"La IA busca lugares reales (OpenStreetMap) y arma un itinerario con horarios, atracciones, restaurantes y hospedaje"}</div>
         <label style={S.lbl}>📍 Ciudad de origen — tu casa *</label>
         <input style={S.inp} placeholder="Ej: San Miguel de Tucumán" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
+        {origenFijo&&origenFijo!==fV.origen&&<button onClick={()=>setFV(p=>({...p,origen:origenFijo}))} style={{background:"none",border:"none",color:"#2b6cb0",cursor:"pointer",fontSize:12,fontWeight:"bold",padding:"2px 0 6px",textAlign:"left"}}>📍 Usar mi punto de partida guardado ({origenFijo})</button>}
         <label style={S.lbl}>🏁 Ciudad de destino *</label>
         <input style={S.inp} placeholder="Ej: San Fernando del Valle de Catamarca" value={fV.destino} onChange={e=>setFV(p=>({...p,destino:e.target.value}))}/>
         <label style={S.lbl}>🛣️ Ruta preferida (opcional)</label>
@@ -739,10 +814,13 @@ function ModalEditarParada({f,setF,onGuardar,onCerrar}){
 }
 
 // ── PANTALLAS ─────────────────────────────────────────────
-function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
+function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,origenFijo,setOrigenFijo}){
   const [tmp,setTmp]=useState(apiKey);
   const [ok,setOk]=useState(false);
+  const [tmpOrigen,setTmpOrigen]=useState(origenFijo);
+  const [okOrigen,setOkOrigen]=useState(false);
   const guardar=()=>{const k=tmp.trim();setApiKey(k);LS.set("apiKey",k);setOk(true);setTimeout(()=>setOk(false),2500);};
+  const guardarOrigen=()=>{const o=tmpOrigen.trim();setOrigenFijo(o);LS.set("origenFijo",o);setOkOrigen(true);setTimeout(()=>setOkOrigen(false),2500);};
   return(
     <div>
       <div style={S.hdr("#4a5568")}>
@@ -756,6 +834,13 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode}){
           {apiKey&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Clave guardada — IA lista</div>}
           <input style={{...S.inp,fontFamily:"monospace",fontSize:12}} type="password" placeholder="gsk_..." value={tmp} onChange={e=>setTmp(e.target.value)}/>
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
+        </div>
+        <div style={S.card}>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>📍 Punto de partida fijo</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Guardá tu dirección real (ej: la de tu casa) para no tener que escribirla cada vez que planificás un viaje nuevo — se completa sola en "Ciudad de origen", pero la podés cambiar en cada viaje si hace falta.</div>
+          {origenFijo&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Guardado: {origenFijo}</div>}
+          <input style={S.inp} placeholder="Ej: Batalla de Ayacucho 2728, San Miguel de Tucumán" value={tmpOrigen} onChange={e=>setTmpOrigen(e.target.value)}/>
+          <button style={S.btn(okOrigen?"#38a169":"#4a5568")} onClick={guardarOrigen}>{okOrigen?"✅ ¡Guardado!":"💾 Guardar punto de partida"}</button>
         </div>
         <div style={S.card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -872,7 +957,7 @@ function CardProximaParada({opcionSel,completadas,onCompletar}){
   );
 }
 
-function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pct,alerta,opcionSel,historial,clima,equipaje,setEquipaje,completadas,onCompletar,onNuevo,onEditarViaje,onIniciar,onFinalizar,onCompartir,setTab,onReintentar}){
+function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pct,alerta,opcionSel,historial,clima,equipaje,setEquipaje,completadas,onCompletar,onNuevo,onEditarViaje,onIniciar,onFinalizar,onCompartir,setTab,onReintentar,sugerencias,loadingSug,sugError,onSugerir,onPlanificarSugerencia}){
   return(
     <div>
       <div style={S.hdr("#2b6cb0")}>
@@ -887,6 +972,7 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
       </div>
       <div style={{padding:16}}>
         {!viaje?(
+          <>
           <div style={{...S.card,textAlign:"center",padding:36}}>
             <div style={{fontSize:54}}>🗺️</div>
             <div style={{fontSize:19,fontWeight:"bold",color:"var(--text)",marginTop:14}}>¡Planificá tu próximo viaje!</div>
@@ -897,10 +983,30 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
                 <button style={S.btn("#d69e2e")} onClick={()=>setTab("config")}>Ir a Configuración</button>
               </div>
             ):(
-              <button style={S.btn("#2b6cb0")} onClick={onNuevo}>🗺️ Planificar nuevo viaje</button>
+              <>
+                <button style={S.btn("#2b6cb0")} onClick={onNuevo}>🗺️ Planificar nuevo viaje</button>
+                <button style={S.btn("#805ad5",true)} onClick={onSugerir} disabled={loadingSug}>{loadingSug?"🎲 Buscando ideas...":"🎲 No sé a dónde ir — sugerime"}</button>
+              </>
             )}
             {historial.length>0&&<button style={S.btn("#718096",true)} onClick={()=>setTab("historial")}>📋 Mis viajes ({historial.length})</button>}
           </div>
+          {loadingSug&&<div style={{...S.card,textAlign:"center",padding:26}}><div style={{fontSize:38,animation:"spin 1s linear infinite"}}>🎲</div><div style={{fontWeight:"bold",color:"#805ad5",marginTop:10}}>Pensando ideas de viaje...</div></div>}
+          {sugError&&!loadingSug&&<div style={{...S.card,background:"#fff5f5",border:"1px solid #feb2b2"}}><div style={{fontSize:13,color:"#c53030"}}>{sugError}</div></div>}
+          {!loadingSug&&sugerencias?.length>0&&(
+            <div className="fade-in">
+              <div style={{fontSize:13,fontWeight:"bold",color:"var(--text-soft)",margin:"4px 0 8px"}}>💡 Ideas para tu próximo viaje</div>
+              {sugerencias.map((d,i)=>(
+                <div key={i} style={S.card}>
+                  <div style={{fontWeight:"bold",fontSize:15,color:"var(--text)"}}>{TIPO_SUG_ICON[d.tipo]||"📍"} {d.nombre}{d.provincia?`, ${d.provincia}`:""}</div>
+                  {d.motivo&&<div style={{fontSize:13,color:"var(--text-soft)",marginTop:4,lineHeight:1.4}}>{d.motivo}</div>}
+                  {(d.distanciaKm||d.tiempoManejo)&&<div style={{fontSize:12,color:"#a0aec0",marginTop:6}}>{d.distanciaKm?`📏 ${d.distanciaKm} km`:""}{d.tiempoManejo?` · 🚗 ${d.tiempoManejo}`:""}</div>}
+                  <button style={S.btn("#2b6cb0")} onClick={()=>onPlanificarSugerencia(d)}>🗺️ Planificar viaje acá</button>
+                </div>
+              ))}
+              <button style={S.btn("#718096",true)} onClick={onSugerir} disabled={loadingSug}>🔄 Otras ideas</button>
+            </div>
+          )}
+          </>
         ):(
           <>
             <div style={{...S.card,background:"linear-gradient(135deg,#1a365d,#2b6cb0)",color:"white",position:"relative"}}>
@@ -971,6 +1077,84 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
   );
 }
 
+// Link a Google Maps con el recorrido completo (origen → lugares de referencia → destino),
+// para poder abrirlo/gestionarlo directamente ahí (navegación turno a turno, tráfico en vivo, etc).
+function googleMapsDirUrl(origen,destino,lugares){
+  const base="https://www.google.com/maps/dir/?api=1&travelmode=driving";
+  const o=`&origin=${encodeURIComponent(origen+", Argentina")}`;
+  const d=`&destination=${encodeURIComponent(destino+", Argentina")}`;
+  const wp=lugares?.length?`&waypoints=${encodeURIComponent(lugares.slice(0,8).map(l=>l+", Argentina").join("|"))}`:"";
+  return base+o+d+wp;
+}
+// Link a Google Maps con las paradas REALES ya verificadas de un día del itinerario generado
+// (usa coordenadas exactas en vez de nombres, para que Google Maps navegue el mismo recorrido
+// que armó la app).
+function googleMapsDirUrlDia(paradas){
+  const puntos=(paradas||[]).filter(p=>p.lat&&p.lng);
+  if(puntos.length<2) return null;
+  const origin=`${puntos[0].lat},${puntos[0].lng}`;
+  const destination=`${puntos[puntos.length-1].lat},${puntos[puntos.length-1].lng}`;
+  const wpPts=puntos.slice(1,-1).slice(0,8);
+  const wp=wpPts.length?`&waypoints=${encodeURIComponent(wpPts.map(p=>`${p.lat},${p.lng}`).join("|"))}`:"";
+  return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${origin}&destination=${destination}${wp}`;
+}
+
+// Mini-mapa de previsualización para una de las 3 opciones de ruta: geocodifica origen/destino
+// (y hasta 2 lugares de referencia como waypoints reales) y dibuja el trazo real de OSRM, para
+// que se pueda ver de un vistazo por dónde pasa esa opción antes de generar el itinerario completo.
+function MapaRutaPreview({origen,destino,lugares}){
+  const ref=useRef(null);
+  const mapRef=useRef(null);
+  const [estado,setEstado]=useState("cargando");
+  useEffect(()=>{
+    let cancelado=false;
+    (async()=>{
+      setEstado("cargando");
+      const oc=await geocodeNominatim(origen+", Argentina"); await sleep(700);
+      if(cancelado) return;
+      const dc=await geocodeNominatim(destino+", Argentina"); await sleep(700);
+      if(cancelado) return;
+      if(!oc||!dc){ setEstado("error"); return; }
+      const viaCoords=[];
+      for(const lug of (lugares||[]).slice(0,2)){
+        const c=await geocodeNominatim(lug+", Argentina");
+        await sleep(700);
+        if(cancelado) return;
+        if(c) viaCoords.push(c);
+      }
+      const trazo=await getOSRM([oc,...viaCoords,dc]);
+      if(cancelado||!ref.current) return;
+      if(mapRef.current){ try{mapRef.current.remove();}catch{} mapRef.current=null; }
+      const map=L.map(ref.current,{zoomControl:false,attributionControl:false,dragging:true,scrollWheelZoom:false}).setView([oc.lat,oc.lng],6);
+      mapRef.current=map;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map);
+      const bounds=[[oc.lat,oc.lng],[dc.lat,dc.lng]];
+      const icoO=L.divIcon({html:`<div style="background:#38a169;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.35)">🚀</div>`,className:"",iconSize:[26,26],iconAnchor:[13,13]});
+      const icoD=L.divIcon({html:`<div style="background:#e53e3e;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.35)">🏁</div>`,className:"",iconSize:[26,26],iconAnchor:[13,13]});
+      L.marker([oc.lat,oc.lng],{icon:icoO}).addTo(map);
+      L.marker([dc.lat,dc.lng],{icon:icoD}).addTo(map);
+      if(trazo?.length){
+        L.polyline(trazo,{color:"#2b6cb0",weight:4,opacity:.85}).addTo(map);
+        trazo.forEach(p=>bounds.push(p));
+      }
+      map.fitBounds(bounds,{padding:[24,24]});
+      setTimeout(()=>{ if(mapRef.current) mapRef.current.invalidateSize(); },120);
+      setEstado("ok");
+    })();
+    return ()=>{
+      cancelado=true;
+      if(mapRef.current){ try{mapRef.current.remove();}catch{} mapRef.current=null; }
+    };
+  },[origen,destino]);
+  return(
+    <div style={{position:"relative",height:190,borderRadius:12,overflow:"hidden",marginBottom:10,background:"#eef2f6"}}>
+      <div ref={ref} style={{width:"100%",height:"100%"}}/>
+      {estado==="cargando"&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#718096",background:"#eef2f6"}}>🗺️ Cargando mapa...</div>}
+      {estado==="error"&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#e53e3e",background:"#fff5f5",textAlign:"center",padding:12}}>No se pudo ubicar el recorrido en el mapa</div>}
+    </div>
+  );
+}
+
 function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItinerario,loadingDetalle,generandoIdx,progresoDia,onEliminarParada,onEditarParada,onMoverParada,onAbrirAgregarParada,onCompartir}){
   const [expandido,setExpandido]=useState(null);
   if(!viaje) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"var(--text-soft)",marginTop:8}}>Creá un viaje en 🏠 Inicio</div></div></div></div>);
@@ -1006,6 +1190,8 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
               </div>
               {abierto&&!sel&&(
                 <div style={{marginTop:12,borderTop:"1px solid var(--border)",paddingTop:12}} className="fade-in">
+                  <MapaRutaPreview origen={viaje.origen} destino={viaje.destino} lugares={op.lugaresEnRuta}/>
+                  <a href={googleMapsDirUrl(viaje.origen,viaje.destino,op.lugaresEnRuta)} target="_blank" rel="noreferrer" style={{display:"block",textAlign:"center",background:"#4285f418",color:"#1a73e8",border:"1.5px solid #4285f4",borderRadius:10,padding:"9px 12px",fontSize:13,fontWeight:"bold",textDecoration:"none",marginBottom:10}}>🗺️ Abrir y gestionar esta ruta en Google Maps</a>
                   {op.resumen&&<div style={{fontSize:13,color:"var(--text)",marginBottom:10,lineHeight:1.4}}>{op.resumen}</div>}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
                     <div style={{background:"#f7fafc",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
@@ -1050,15 +1236,19 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                     <button onClick={onCompartir} style={{...S.btn("#25d366",true),flex:1,marginTop:0,padding:"8px",fontSize:13}}>📲 WhatsApp</button>
                     <button onClick={()=>onAbrirAgregarParada()} style={{...S.btn("#38a169",true),flex:1,marginTop:0,padding:"8px",fontSize:13}}>➕ Agregar parada</button>
                   </div>
-                  {opcionSel.dias.map((dia,di)=>(
+                  {opcionSel.dias.map((dia,di)=>{
+                    const linkDia=googleMapsDirUrlDia(dia.paradas);
+                    return(
                     <div key={di} style={{marginBottom:16}}>
-                      <div style={{fontWeight:"bold",color:"white",background:c,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:14,display:"flex",justifyContent:"space-between"}}>
+                      <div style={{fontWeight:"bold",color:"white",background:c,borderRadius:10,padding:"8px 14px",marginBottom:8,fontSize:14,display:"flex",justifyContent:"space-between"}}>
                         <span>📅 Día {dia.dia}: {dia.titulo}</span>
                         {dia.kmDelDia&&<span style={{fontSize:12,opacity:.85}}>📏 {dia.kmDelDia} km</span>}
                       </div>
+                      {linkDia&&<a href={linkDia} target="_blank" rel="noreferrer" style={{display:"block",textAlign:"center",background:"#4285f418",color:"#1a73e8",border:"1.5px solid #4285f4",borderRadius:8,padding:"7px 10px",fontSize:12,fontWeight:"bold",textDecoration:"none",marginBottom:10}}>🗺️ Gestionar el día {dia.dia} en Google Maps</a>}
                       {dia.paradas?.map((p,pi)=>(<Parada key={pi} p={p} isFirst={pi===0} isLast={pi===dia.paradas.length-1} clave={`${di}-${pi}`} onEliminar={onEliminarParada} onEditar={onEditarParada} onMover={onMoverParada}/>))}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               <button style={S.btn(c,false)} onClick={()=>generarItinerario(op,oi)} disabled={loadingDetalle}>
@@ -1233,6 +1423,10 @@ function PantallaHistorial({historial,onEliminar}){
 function App(){
   const [tab,setTab]=useState("inicio");
   const [apiKey,setApiKey]=useState(()=>LS.get("apiKey",""));
+  const [origenFijo,setOrigenFijo]=useState(()=>LS.get("origenFijo",""));
+  const [sugerencias,setSugerencias]=useState([]);
+  const [loadingSug,setLoadingSug]=useState(false);
+  const [sugError,setSugError]=useState("");
   const [viaje,setViaje]=useState(()=>LS.get("viaje",null));
   const [estado,setEstado]=useState(()=>LS.get("estado","nuevo"));
   const [opciones,setOpciones]=useState(()=>LS.get("opciones",[]));
@@ -1319,6 +1513,38 @@ function App(){
   },[estado,viaje,inicioR,notif3h]);
 
   const alerta=estado==="viajando"&&viaje&&(()=>{const d=new Date(viaje.fDevol)-new Date();return d>0&&d<3*3600000;})();
+
+  const abrirNuevoViaje=()=>{
+    setFV(p=>({...p,origen:p.origen||origenFijo||""}));
+    setModal("viaje");
+  };
+
+  // "No sé a dónde ir": tira ideas variadas de destinos reales para viajar en auto, sin
+  // pedir nada más — pensado para cuando todavía no hay ningún viaje planificado.
+  const sugerirDestinos=async()=>{
+    if(!apiKey){ setSugError("Configurá tu API Key en ⚙️ primero."); return; }
+    setLoadingSug(true); setSugError(""); setSugerencias([]);
+    try{
+      const data=await callGroq(apiKey,[
+        {role:"system",content:"Sos un experto en turismo y viajes en auto por Argentina. Respondes solo JSON valido."},
+        {role:"user",content:`Sugerime 5 destinos REALES y bien variados entre sí para un viaje en auto${origenFijo?`, saliendo desde ${origenFijo}`:" por Argentina"}, para alguien que todavía no sabe a dónde ir. Que sean bien distintos (por ejemplo: uno de montaña, uno de naturaleza/agua, un pueblo con historia, una ciudad, alguna zona menos conocida), todos accesibles en auto por rutas reales.${origenFijo?" Calculá la distancia y el tiempo de manejo aproximado real en auto desde ese punto de partida.":" No inventes distancia/tiempo porque no tenés el origen, dejalos en null."}
+
+JSON: {"destinos":[{"nombre":"str","provincia":"str","motivo":"str breve, 1 frase, qué lo hace interesante","distanciaKm":0,"tiempoManejo":"str o null","tipo":"montaña|naturaleza|playa|ciudad|pueblo|cultura"}]}`}
+      ],1300,0.7);
+      let parsed;
+      try{ parsed=JSON.parse(data.choices[0].message.content.trim().replace(/```json|```/g,"")); }
+      catch{ throw new Error("La IA devolvió un formato inválido. Probá de nuevo."); }
+      if(!parsed.destinos?.length) throw new Error("No se generaron sugerencias. Probá de nuevo.");
+      setSugerencias(parsed.destinos);
+    }catch(e){ setSugError(e.message||"Error al pedir sugerencias."); }
+    setLoadingSug(false);
+  };
+
+  const planificarDesdeSugerencia=(dest)=>{
+    setFV(p=>({...p,origen:p.origen||origenFijo||"",destino:dest.nombre+(dest.provincia?`, ${dest.provincia}`:"")}));
+    setSugerencias([]);
+    setModal("viaje");
+  };
 
   const crearViaje=()=>{
     if(!fV.origen||!fV.destino||!fV.fRetiro||!fV.fDevol) return;
@@ -1410,49 +1636,76 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
     const distKm=ruta.distKm;
     const cum=cumKmDeRuta(ruta.coords);
 
-    // Viaje de un solo día (ida y vuelta el mismo día): no hay noche de por medio.
+    // Horas realmente disponibles según retiro/devolución: esto es lo que distingue un
+    // fin de semana (sale tarde el viernes, tiene que volver temprano el lunes) de una
+    // semana completa (sale temprano, tiene todo el último día disponible) — no hace falta
+    // preguntarle al usuario qué tipo de viaje es, lo dice la fecha/hora que ya cargó.
+    const horaLimiteDate=new Date(viaje.fDevol);
+    horaLimiteDate.setHours(horaLimiteDate.getHours()-(viaje.buffer||3));
+    const velEfectiva=velocidadEfectivaKmH(distKm,ruta.durMin);
+    const kmDia1=kmDisponiblesDia1(viaje.horaSalidaCasa||viaje.fRetiro,velEfectiva);
+    const inicioUltimoDia=inicioDelDia(viaje.horaSalidaCasa||viaje.fRetiro,totalDias);
+    const kmDiaUltimo=kmDisponiblesUltimoDia(horaLimiteDate,inicioUltimoDia,velEfectiva);
+
+    // Viaje de un solo día (ida y vuelta el mismo día): no hay noche de por medio — el cupo
+    // es el tiempo real entre la salida de casa y la hora límite de vuelta, restando un
+    // mínimo para conocer algo en el destino.
     if(totalDias===1){
-      if(distKm>MAX_KM_DIA) throw new Error(`${viaje.destino} está a ${Math.round(distKm)} km de ${viaje.origen}. Ir y volver el mismo día implicaría manejar ${Math.round(distKm*2)} km, no es razonable. Sumá más días al viaje o elegí un destino más cercano.`);
+      const horaSalida=new Date(viaje.horaSalidaCasa||viaje.fRetiro);
+      const horasDisponibles=Math.max(0,(horaLimiteDate-horaSalida)/3600000);
+      const horasManejoDisp=Math.max(0,horasDisponibles-1.5);
+      const kmDisponibleTotal=horasManejoDisp*velEfectiva;
+      if(distKm*2>kmDisponibleTotal){
+        throw new Error(`${viaje.destino} está a ${Math.round(distKm)} km de ${viaje.origen} (~${fmtDuracionMin(Math.round(ruta.durMin))} de manejo por tramo). Entre que salís (${fmtHoraCorta(horaSalida)}) y el límite para volver (${fmtHoraCorta(horaLimiteDate)}) tenés ${horasDisponibles.toFixed(1)}hs, y no alcanza para ir, conocer algo y volver el mismo día. Sumá más días al viaje o elegí un destino más cercano.`);
+      }
       return {dias:[{dia:1,desde:viaje.origen,hasta:viaje.origen,desdeCoord:origCoord,hastaCoord:origCoord,destinoDia:destCoord,kmDia:Math.round(distKm*2),tipo:"idaYvuelta",kmMin:0,kmMax:distKm}],rutaCoords:ruta.coords,rutaCum:cum,rutaDistKm:distKm,rutaDurMin:ruta.durMin};
     }
 
-    const idaDias=Math.max(1,Math.min(totalDias,Math.ceil(distKm/MAX_KM_DIA)));
-    const vueltaDias=Math.max(1,Math.min(totalDias-idaDias,Math.ceil(distKm/MAX_KM_DIA)));
+    // Días mínimos de ida (día 1 con el cupo reducido si se sale tarde, resto a MAX_KM_DIA)
+    // y de vuelta (último día con el cupo reducido si hay que volver temprano) — si ninguno
+    // alcanza ni usando todos los días del viaje, es un viaje inviable con esas fechas.
+    const arrIda=repartirDiasIda(distKm,kmDia1,MAX_KM_DIA,totalDias);
+    const arrVuelta=arrIda?repartirDiasVuelta(distKm,MAX_KM_DIA,kmDiaUltimo,totalDias):null;
+    if(!arrIda||!arrVuelta){
+      throw new Error(`${viaje.destino} está a ${Math.round(distKm)} km de ${viaje.origen}. Con las horas reales que tenés disponibles el primer y el último día (salís ${fmtHoraCorta(new Date(viaje.horaSalidaCasa||viaje.fRetiro))}, tenés que estar de vuelta antes de ${fmtHoraCorta(horaLimiteDate)}), ni usando todos los días del viaje (${totalDias}) alcanza para ir y volver. Ampliá los días del viaje o elegí un destino más cercano.`);
+    }
+    const idaDias=arrIda.length, vueltaDias=arrVuelta.length;
     const estadiaDias=totalDias-idaDias-vueltaDias;
     if(estadiaDias<0){
-      throw new Error(`${viaje.destino} está a ${Math.round(distKm)} km de ${viaje.origen} (aprox ${idaDias} día(s) de manejo por tramo, a un ritmo razonable de hasta ${MAX_KM_DIA}km/día). Con los días que elegiste (${totalDias}) no alcanza para ir Y volver. Ampliá los días del viaje o elegí un destino más cercano.`);
+      throw new Error(`${viaje.destino} está a ${Math.round(distKm)} km de ${viaje.origen} (${idaDias} día(s) de ida y ${vueltaDias} de vuelta, según las horas reales disponibles cada día). Con los días que elegiste (${totalDias}) no alcanza para ir Y volver. Ampliá los días del viaje o elegí un destino más cercano.`);
     }
 
     const dias=[];
-    // IDA: se reparte la distancia real en partes iguales y se ubica cada corte sobre el
-    // trazo real de la ruta (no en cualquier lugar "cerca" del medio).
+    // IDA: se usa el reparto real (día 1 puede ser más corto si se sale tarde) y se ubica
+    // cada corte sobre el trazo real de la ruta (no en cualquier lugar "cerca" del medio).
     let prevTarget=0,coordPrevia=origCoord,nombrePrevio=viaje.origen;
-    for(let i=1;i<=idaDias;i++){
-      const targetKm=Math.round(distKm*i/idaDias);
-      const esUltima=i===idaDias;
+    for(let i=0;i<arrIda.length;i++){
+      const targetKm=arrIda[i].cumKm;
+      const esUltima=i===arrIda.length-1;
       const coordDia=esUltima?destCoord:puntoEnKm(ruta.coords,cum,targetKm);
       let nombreDia=esUltima?viaje.destino:null;
       if(!esUltima){ nombreDia=await nombreLocalidadCercana(coordDia.lat,coordDia.lng); await sleep(1100); }
-      if(!nombreDia) nombreDia=esUltima?viaje.destino:`Km ${targetKm} rumbo a ${viaje.destino}`;
-      dias.push({dia:dias.length+1,desde:nombrePrevio,hasta:nombreDia,desdeCoord:coordPrevia,hastaCoord:coordDia,kmDia:targetKm-prevTarget,tipo:"ida",kmMin:prevTarget,kmMax:targetKm});
+      if(!nombreDia) nombreDia=esUltima?viaje.destino:`Km ${Math.round(targetKm)} rumbo a ${viaje.destino}`;
+      dias.push({dia:dias.length+1,desde:nombrePrevio,hasta:nombreDia,desdeCoord:coordPrevia,hastaCoord:coordDia,kmDia:arrIda[i].kmDia,tipo:"ida",kmMin:prevTarget,kmMax:targetKm});
       prevTarget=targetKm; coordPrevia=coordDia; nombrePrevio=nombreDia;
     }
     // ESTADÍA: días completos en el destino, sin grandes traslados.
     for(let i=0;i<estadiaDias;i++){
       dias.push({dia:dias.length+1,desde:viaje.destino,hasta:viaje.destino,desdeCoord:destCoord,hastaCoord:destCoord,kmDia:0,tipo:"estadia",kmMin:null,kmMax:null});
     }
-    // VUELTA: mismo trazo real, en sentido inverso.
+    // VUELTA: mismo trazo real, en sentido inverso, con el último día ajustado a la hora
+    // límite real de devolución.
     let prevVTarget=0; coordPrevia=destCoord; nombrePrevio=viaje.destino;
-    for(let i=1;i<=vueltaDias;i++){
-      const vTarget=Math.round(distKm*i/vueltaDias);
+    for(let i=0;i<arrVuelta.length;i++){
+      const vTarget=arrVuelta[i].cumKm;
       const posDesdeOrigen=distKm-vTarget;
-      const esUltima=i===vueltaDias;
+      const esUltima=i===arrVuelta.length-1;
       const coordDia=esUltima?origCoord:puntoEnKm(ruta.coords,cum,posDesdeOrigen);
       let nombreDia=esUltima?viaje.origen:null;
       if(!esUltima){ nombreDia=await nombreLocalidadCercana(coordDia.lat,coordDia.lng); await sleep(1100); }
-      if(!nombreDia) nombreDia=esUltima?viaje.origen:`Km ${posDesdeOrigen} rumbo a ${viaje.origen}`;
+      if(!nombreDia) nombreDia=esUltima?viaje.origen:`Km ${Math.round(posDesdeOrigen)} rumbo a ${viaje.origen}`;
       const kmMin=Math.min(distKm-prevVTarget,posDesdeOrigen),kmMax=Math.max(distKm-prevVTarget,posDesdeOrigen);
-      dias.push({dia:dias.length+1,desde:nombrePrevio,hasta:nombreDia,desdeCoord:coordPrevia,hastaCoord:coordDia,kmDia:vTarget-prevVTarget,tipo:"vuelta",kmMin,kmMax});
+      dias.push({dia:dias.length+1,desde:nombrePrevio,hasta:nombreDia,desdeCoord:coordPrevia,hastaCoord:coordDia,kmDia:arrVuelta[i].kmDia,tipo:"vuelta",kmMin,kmMax});
       prevVTarget=vTarget; coordPrevia=coordDia; nombrePrevio=nombreDia;
     }
     return {dias,rutaCoords:ruta.coords,rutaCum:cum,rutaDistKm:distKm,rutaDurMin:ruta.durMin};
@@ -1795,13 +2048,13 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
       <div style={{display:tab==="mapa"?"block":"none",height:"calc(100vh - 72px)"}}>
         <PantallaMapa viaje={viaje} opcionSel={opcionSel} posGPS={posGPS} estado={estado}/>
       </div>
-      {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} clima={clima} equipaje={equipaje} setEquipaje={setEquipaje} completadas={completadas} onCompletar={completarParada} onNuevo={()=>setModal("viaje")} onEditarViaje={abrirEditarViaje} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} onCompartir={compartirWhatsApp} setTab={setTab} onReintentar={()=>buscarIA(viaje)}/>}
+      {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} clima={clima} equipaje={equipaje} setEquipaje={setEquipaje} completadas={completadas} onCompletar={completarParada} onNuevo={abrirNuevoViaje} onEditarViaje={abrirEditarViaje} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} onCompartir={compartirWhatsApp} setTab={setTab} onReintentar={()=>buscarIA(viaje)} sugerencias={sugerencias} loadingSug={loadingSug} sugError={sugError} onSugerir={sugerirDestinos} onPlanificarSugerencia={planificarDesdeSugerencia}/>}
       {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle} generandoIdx={generandoIdx} progresoDia={progresoDia} onEliminarParada={eliminarParada} onEditarParada={abrirEditarParada} onMoverParada={moverParada} onAbrirAgregarParada={()=>setModal("parada")} onCompartir={compartirWhatsApp}/>}
       {tab==="gastos"    &&<PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
       {tab==="historial" &&<PantallaHistorial historial={historial} onEliminar={id=>setHistorial(p=>p.filter(h=>h.id!==id))}/>}
-      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode}/>}
-      {modal==="viaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)}/>}
-      {modal==="editarViaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={guardarEdicionViaje} onCerrar={()=>setModal(null)} editando={true}/>}
+      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode} origenFijo={origenFijo} setOrigenFijo={setOrigenFijo}/>}
+      {modal==="viaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)} origenFijo={origenFijo}/>}
+      {modal==="editarViaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={guardarEdicionViaje} onCerrar={()=>setModal(null)} editando={true} origenFijo={origenFijo}/>}
       {modal==="gasto" &&<ModalGasto fG={fG} setFG={setFG} onAgregar={agregarGasto} onCerrar={()=>setModal(null)}/>}
       {modal==="nafta" &&<ModalNafta fN={fN} setFN={setFN} onAgregarComoGasto={(costo,km)=>{setGastos(p=>[...p,{id:Date.now(),cat:"nafta",desc:`Nafta — ${km} km`,monto:costo,fecha:new Date().toLocaleDateString("es-AR")}]);setModal(null);}} onCerrar={()=>setModal(null)}/>}
       {modal==="parada"&&<ModalAgregarParada opcionSel={opcionSel} onAgregar={agregarParada} onCerrar={()=>setModal(null)}/>}

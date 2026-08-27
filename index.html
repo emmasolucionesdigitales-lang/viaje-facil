@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.7";
+const VERSION="8.8";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -1179,23 +1179,25 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                   <div>
                     <div style={{fontWeight:"bold",fontSize:16,color:c}}>Opción {oi+1}: {op.nombre}</div>
-                    <div style={{fontSize:13,color:"var(--text)",marginTop:2}}>{op.descripcion}</div>
+                    {op.resumen&&<div style={{fontSize:13,color:"var(--text)",marginTop:2}}>{op.resumen}</div>}
                   </div>
                   <span style={{fontSize:18,color:"#a0aec0"}}>{abierto?"▲":"▼"}</span>
                 </div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {op.totalKm&&<span style={S.bdg(c)}>📏 {op.totalKm} km</span>}
-                  <span style={S.bdg("#718096")}>🎨 {op.estilo}</span>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                  {op.km&&<span style={S.bdg(c)}>📏 {op.km} km</span>}
+                  {op.tiempoManejo&&<span style={S.bdg("#718096")}>🚗 {op.tiempoManejo}</span>}
+                  {op.ventaja&&<span style={S.bdg("#38a169")}>✅ {op.ventaja}</span>}
+                  {op.verificado&&<span style={{fontSize:11,color:"#276749",fontWeight:"bold"}}>✅ distancia verificada</span>}
                 </div>
               </div>
               {abierto&&!sel&&(
                 <div style={{marginTop:12,borderTop:"1px solid var(--border)",paddingTop:12}} className="fade-in">
                   <MapaRutaPreview origen={viaje.origen} destino={viaje.destino} lugares={op.lugaresEnRuta}/>
                   <a href={googleMapsDirUrl(viaje.origen,viaje.destino,op.lugaresEnRuta)} target="_blank" rel="noreferrer" style={{display:"block",textAlign:"center",background:"#4285f418",color:"#1a73e8",border:"1.5px solid #4285f4",borderRadius:10,padding:"9px 12px",fontSize:13,fontWeight:"bold",textDecoration:"none",marginBottom:10}}>🗺️ Abrir y gestionar esta ruta en Google Maps</a>
-                  {op.resumen&&<div style={{fontSize:13,color:"var(--text)",marginBottom:10,lineHeight:1.4}}>{op.resumen}</div>}
+                  {!op.verificado&&<div style={{fontSize:11,color:"#dd6b20",marginBottom:10}}>⚠️ No se pudo verificar la distancia real todavía — son valores estimados por la IA.</div>}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
                     <div style={{background:"#f7fafc",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
-                      <div style={{fontSize:11,color:"#718096"}}>📏 Distancia</div>
+                      <div style={{fontSize:11,color:"#718096"}}>📏 Distancia{op.verificado?" ✅":""}</div>
                       <div style={{fontSize:15,fontWeight:"bold",color:"#2d3748"}}>{op.km||"?"} km</div>
                     </div>
                     <div style={{background:"#f7fafc",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
@@ -1602,6 +1604,33 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
         throw new Error("La IA devolvió un formato inválido. Probá reintentar.");
       }
       if(!parsed.opciones?.length) throw new Error("La IA no devolvió opciones. Probá reintentar o revisar tu API Key.");
+
+      // La IA "adivina" los km/tiempo de memoria y puede errar bastante (ej: decir 300km
+      // cuando en realidad son 430). Antes de mostrar las opciones, se verifica la distancia
+      // y el tiempo de manejo REALES de cada una contra OSRM (pasando por los lugares de
+      // referencia que sugirió como waypoints), y se pisan los valores que dio la IA.
+      try{
+        const origCoord=await geocodeNominatim(v.origen+", Argentina"); await sleep(1100);
+        const destCoord=await geocodeNominatim(v.destino+", Argentina"); await sleep(1100);
+        if(origCoord&&destCoord){
+          for(const op of parsed.opciones){
+            const viaCoords=[];
+            for(const lug of (op.lugaresEnRuta||[]).slice(0,3)){
+              const c=await geocodeNominatim(lug+", Argentina");
+              await sleep(1100);
+              if(c) viaCoords.push(c);
+            }
+            const ruta=await getOSRMRoute([origCoord,...viaCoords,destCoord]);
+            if(ruta){
+              op.km=Math.round(ruta.distKm);
+              op.tiempoManejo=fmtDuracionMin(Math.round(ruta.durMin));
+              op.tiempoTotal=fmtDuracionMin(Math.round(ruta.durMin*1.35+30));
+              op.verificado=true;
+            }
+          }
+        }
+      }catch{} // si falla la verificación, se muestran igual los valores estimados por la IA
+
       setOpciones(parsed.opciones);
       setEstado("listo");
       setTab("opciones");

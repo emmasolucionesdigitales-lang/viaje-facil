@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.9";
+const VERSION="8.10";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -650,16 +650,27 @@ function Parada({p,isLast,isFirst,onEliminar,onEditar,onMover,clave,completada,o
 }
 
 // ── MODALES ───────────────────────────────────────────────
-function ModalViaje({fV,setFV,onCrear,onCerrar,editando,origenFijo}){
+function ModalViaje({fV,setFV,onCrear,onCerrar,editando,lugaresGuardados}){
+  const chipsLugar=(valorActual,onElegir)=>(lugaresGuardados?.length>0&&
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,margin:"2px 0 8px"}}>
+      {lugaresGuardados.map(l=>(
+        <button key={l.id} type="button" onClick={()=>onElegir(l.direccion)}
+          style={{background:valorActual===l.direccion?"#2b6cb018":"var(--input-bg)",border:`1.5px solid ${valorActual===l.direccion?"#2b6cb0":"var(--border)"}`,color:valorActual===l.direccion?"#2b6cb0":"var(--text)",borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:"bold",cursor:"pointer"}}>
+          📍 {l.nombre}
+        </button>
+      ))}
+    </div>
+  );
   return(
     <div style={S.ovr} onClick={onCerrar}>
       <div style={S.sht} onClick={e=>e.stopPropagation()}>
         <div style={{fontWeight:"bold",fontSize:19,color:"var(--text)"}}>{editando?"✏️ Editar Viaje":"🚗 Planificar Viaje"}</div>
         <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:8}}>{editando?"Estos cambios no regeneran el itinerario ya creado. Si cambiás fechas o destino, revisá el itinerario después.":"La IA busca lugares reales (OpenStreetMap) y arma un itinerario con horarios, atracciones, restaurantes y hospedaje"}</div>
         <label style={S.lbl}>📍 Ciudad o dirección real de origen (tu punto de partida) *</label>
+        {chipsLugar(fV.origen,d=>setFV(p=>({...p,origen:d})))}
         <input style={S.inp} placeholder="Ej: San Miguel de Tucumán (no escribas 'casa', poné el nombre real del lugar)" value={fV.origen} onChange={e=>setFV(p=>({...p,origen:e.target.value}))}/>
-        {origenFijo&&origenFijo!==fV.origen&&<button onClick={()=>setFV(p=>({...p,origen:origenFijo}))} style={{background:"none",border:"none",color:"#2b6cb0",cursor:"pointer",fontSize:12,fontWeight:"bold",padding:"2px 0 6px",textAlign:"left"}}>📍 Usar mi punto de partida guardado ({origenFijo})</button>}
         <label style={S.lbl}>🏁 Ciudad de destino *</label>
+        {chipsLugar(fV.destino,d=>setFV(p=>({...p,destino:d})))}
         <input style={S.inp} placeholder="Ej: San Fernando del Valle de Catamarca" value={fV.destino} onChange={e=>setFV(p=>({...p,destino:e.target.value}))}/>
         <label style={S.lbl}>🛣️ Ruta preferida (opcional)</label>
         <input style={S.inp} placeholder="Ej: Por Ruta Nacional 38" value={fV.ruta} onChange={e=>setFV(p=>({...p,ruta:e.target.value}))}/>
@@ -814,13 +825,17 @@ function ModalEditarParada({f,setF,onGuardar,onCerrar}){
 }
 
 // ── PANTALLAS ─────────────────────────────────────────────
-function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,origenFijo,setOrigenFijo}){
+function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,lugaresGuardados,onAgregarLugar,onEliminarLugar}){
   const [tmp,setTmp]=useState(apiKey);
   const [ok,setOk]=useState(false);
-  const [tmpOrigen,setTmpOrigen]=useState(origenFijo);
-  const [okOrigen,setOkOrigen]=useState(false);
+  const [nombreNuevo,setNombreNuevo]=useState("");
+  const [dirNueva,setDirNueva]=useState("");
   const guardar=()=>{const k=tmp.trim();setApiKey(k);LS.set("apiKey",k);setOk(true);setTimeout(()=>setOk(false),2500);};
-  const guardarOrigen=()=>{const o=tmpOrigen.trim();setOrigenFijo(o);LS.set("origenFijo",o);setOkOrigen(true);setTimeout(()=>setOkOrigen(false),2500);};
+  const agregar=()=>{
+    if(!nombreNuevo.trim()||!dirNueva.trim()) return;
+    onAgregarLugar(nombreNuevo,dirNueva);
+    setNombreNuevo("");setDirNueva("");
+  };
   return(
     <div>
       <div style={S.hdr("#4a5568")}>
@@ -836,11 +851,24 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,origenFijo,setOri
           <button style={S.btn(ok?"#38a169":"#4a5568")} onClick={guardar}>{ok?"✅ ¡Guardada!":"💾 Guardar clave"}</button>
         </div>
         <div style={S.card}>
-          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>📍 Punto de partida fijo</div>
-          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Guardá tu dirección real (ej: la de tu casa) para no tener que escribirla cada vez que planificás un viaje nuevo — se completa sola en "Ciudad de origen", pero la podés cambiar en cada viaje si hace falta.</div>
-          {origenFijo&&<div style={{padding:10,background:"#f0fff4",border:"1px solid #9ae6b4",borderRadius:10,marginBottom:12,fontSize:13,color:"#276749"}}>✅ Guardado: {origenFijo}</div>}
-          <input style={S.inp} placeholder="Ej: Batalla de Ayacucho 2728, San Miguel de Tucumán" value={tmpOrigen} onChange={e=>setTmpOrigen(e.target.value)}/>
-          <button style={S.btn(okOrigen?"#38a169":"#4a5568")} onClick={guardarOrigen}>{okOrigen?"✅ ¡Guardado!":"💾 Guardar punto de partida"}</button>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:15,marginBottom:8}}>📍 Lugares guardados</div>
+          <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:12,lineHeight:1.6}}>Guardá direcciones reales que usás seguido — tu casa, la de un familiar, etc. Un lugar llamado exactamente "Casa" se completa solo como origen al planificar un viaje nuevo; todos aparecen como botones rápidos para elegir origen o destino.</div>
+          {lugaresGuardados?.length>0&&(
+            <div style={{marginBottom:12}}>
+              {lugaresGuardados.map(l=>(
+                <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"8px 10px",background:"#f7fafc",borderRadius:10,marginBottom:6}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:"bold",fontSize:13,color:"#2d3748"}}>📍 {l.nombre}</div>
+                    <div style={{fontSize:12,color:"#718096",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.direccion}</div>
+                  </div>
+                  <button onClick={()=>onEliminarLugar(l.id)} aria-label={`Eliminar ${l.nombre}`} style={{background:"none",border:"none",color:"#e53e3e",cursor:"pointer",fontSize:16,flexShrink:0}}>🗑</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input style={S.inp} placeholder='Nombre (ej: "Casa", "Casa de Juan")' value={nombreNuevo} onChange={e=>setNombreNuevo(e.target.value)}/>
+          <input style={S.inp} placeholder="Dirección o ciudad real (ej: Batalla de Ayacucho 2728, San Miguel de Tucumán)" value={dirNueva} onChange={e=>setDirNueva(e.target.value)}/>
+          <button style={S.btn("#4a5568")} onClick={agregar}>➕ Agregar lugar</button>
         </div>
         <div style={S.card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1426,6 +1454,14 @@ function App(){
   const [tab,setTab]=useState("inicio");
   const [apiKey,setApiKey]=useState(()=>LS.get("apiKey",""));
   const [origenFijo,setOrigenFijo]=useState(()=>LS.get("origenFijo",""));
+  const [lugaresGuardados,setLugaresGuardados]=useState(()=>{
+    const guardados=LS.get("lugaresGuardados",null);
+    if(guardados) return guardados;
+    // Migración: si ya tenían un "punto de partida fijo" guardado de una versión anterior,
+    // se convierte en el primer lugar guardado (Casa) para no perder ese dato.
+    const viejo=LS.get("origenFijo","");
+    return viejo?[{id:1,nombre:"Casa",direccion:viejo}]:[];
+  });
   const [sugerencias,setSugerencias]=useState([]);
   const [loadingSug,setLoadingSug]=useState(false);
   const [sugError,setSugError]=useState("");
@@ -1516,9 +1552,28 @@ function App(){
 
   const alerta=estado==="viajando"&&viaje&&(()=>{const d=new Date(viaje.fDevol)-new Date();return d>0&&d<3*3600000;})();
 
+  // "Casa" es el lugar guardado que se usa para completar el origen automáticamente al
+  // planificar un viaje nuevo — cualquier lugar guardado llamado "Casa" (sin importar
+  // mayúsculas) cumple ese rol; si no hay ninguno, no se completa nada.
+  const casaGuardada=lugaresGuardados.find(l=>l.nombre.trim().toLowerCase()==="casa")?.direccion||origenFijo||"";
+
   const abrirNuevoViaje=()=>{
-    setFV(p=>({...p,origen:p.origen||origenFijo||""}));
+    setFV(p=>({...p,origen:p.origen||casaGuardada||""}));
     setModal("viaje");
+  };
+
+  const agregarLugarGuardado=(nombre,direccion)=>{
+    const n=nombre.trim(),d=direccion.trim();
+    if(!n||!d) return;
+    const nueva=[...lugaresGuardados,{id:Date.now(),nombre:n,direccion:d}];
+    setLugaresGuardados(nueva);
+    LS.set("lugaresGuardados",nueva);
+  };
+
+  const eliminarLugarGuardado=(id)=>{
+    const nueva=lugaresGuardados.filter(l=>l.id!==id);
+    setLugaresGuardados(nueva);
+    LS.set("lugaresGuardados",nueva);
   };
 
   // "No sé a dónde ir": tira ideas variadas de destinos reales para viajar en auto, sin
@@ -1543,7 +1598,7 @@ JSON: {"destinos":[{"nombre":"str","provincia":"str","motivo":"str breve, 1 fras
   };
 
   const planificarDesdeSugerencia=(dest)=>{
-    setFV(p=>({...p,origen:p.origen||origenFijo||"",destino:dest.nombre+(dest.provincia?`, ${dest.provincia}`:"")}));
+    setFV(p=>({...p,origen:p.origen||casaGuardada||"",destino:dest.nombre+(dest.provincia?`, ${dest.provincia}`:"")}));
     setSugerencias([]);
     setModal("viaje");
   };
@@ -1562,9 +1617,11 @@ JSON: {"destinos":[{"nombre":"str","provincia":"str","motivo":"str breve, 1 fras
   };
 
   const abrirEditarViaje=()=>{
-    if(!viaje) return;
-    setFV({origen:viaje.origen||"",destino:viaje.destino||"",ruta:viaje.ruta||"",auto:viaje.auto||"",fRetiro:viaje.fRetiro||"",fDevol:viaje.fDevol||"",pers:String(viaje.pers||2),buffer:viaje.buffer||3,notas:viaje.notas||"",presupuesto:viaje.presupuesto||"economico",minTraslado:viaje.minTraslado||"45"});
-    setModal("editarViaje");
+    try{
+      if(!viaje){console.warn("[Editar viaje] no hay viaje activo, no se abre el modal");return;}
+      setFV({origen:viaje.origen||"",destino:viaje.destino||"",ruta:viaje.ruta||"",auto:viaje.auto||"",fRetiro:viaje.fRetiro||"",fDevol:viaje.fDevol||"",pers:String(viaje.pers||2),buffer:viaje.buffer||3,notas:viaje.notas||"",presupuesto:viaje.presupuesto||"economico",minTraslado:viaje.minTraslado||"45"});
+      setModal("editarViaje");
+    }catch(e){console.error("[Editar viaje] error al abrir:",e);alert("No se pudo abrir la edición del viaje: "+(e.message||e));}
   };
 
   const guardarEdicionViaje=()=>{
@@ -2089,9 +2146,9 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
       {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle} generandoIdx={generandoIdx} progresoDia={progresoDia} onEliminarParada={eliminarParada} onEditarParada={abrirEditarParada} onMoverParada={moverParada} onAbrirAgregarParada={()=>setModal("parada")} onCompartir={compartirWhatsApp}/>}
       {tab==="gastos"    &&<PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
       {tab==="historial" &&<PantallaHistorial historial={historial} onEliminar={id=>setHistorial(p=>p.filter(h=>h.id!==id))}/>}
-      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode} origenFijo={origenFijo} setOrigenFijo={setOrigenFijo}/>}
-      {modal==="viaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)} origenFijo={origenFijo}/>}
-      {modal==="editarViaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={guardarEdicionViaje} onCerrar={()=>setModal(null)} editando={true} origenFijo={origenFijo}/>}
+      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode} lugaresGuardados={lugaresGuardados} onAgregarLugar={agregarLugarGuardado} onEliminarLugar={eliminarLugarGuardado}/>}
+      {modal==="viaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)} lugaresGuardados={lugaresGuardados}/>}
+      {modal==="editarViaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={guardarEdicionViaje} onCerrar={()=>setModal(null)} editando={true} lugaresGuardados={lugaresGuardados}/>}
       {modal==="gasto" &&<ModalGasto fG={fG} setFG={setFG} onAgregar={agregarGasto} onCerrar={()=>setModal(null)}/>}
       {modal==="nafta" &&<ModalNafta fN={fN} setFN={setFN} onAgregarComoGasto={(costo,km)=>{setGastos(p=>[...p,{id:Date.now(),cat:"nafta",desc:`Nafta — ${km} km`,monto:costo,fecha:new Date().toLocaleDateString("es-AR")}]);setModal(null);}} onCerrar={()=>setModal(null)}/>}
       {modal==="parada"&&<ModalAgregarParada opcionSel={opcionSel} onAgregar={agregarParada} onCerrar={()=>setModal(null)}/>}

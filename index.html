@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.10";
+const VERSION="8.11";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -1676,13 +1676,27 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
       try{
         const origCoord=origCoordChk,destCoord=destCoordChk;
         if(origCoord&&destCoord){
+          const distDirecta=haversineKm(origCoord.lat,origCoord.lng,destCoord.lat,destCoord.lng);
           for(const op of parsed.opciones){
-            const viaCoords=[];
-            for(const lug of (op.lugaresEnRuta||[]).slice(0,3)){
+            // La IA a veces menciona lugares que NO están en el camino real (ej: un lugar
+            // en la dirección opuesta), y si se usan igual como waypoint, OSRM arma una
+            // ruta con un desvío enorme (y Google Maps después muestra ese despropósito).
+            // Se descarta cualquier lugar cuyo desvío implique más de 1.5x la distancia
+            // directa origen→destino — solo se usan como waypoints los que están de veras
+            // en el camino.
+            const candidatos=[];
+            for(const lug of (op.lugaresEnRuta||[]).slice(0,5)){
               const c=await geocodeNominatim(lug+", Argentina");
               await sleep(1100);
-              if(c) viaCoords.push(c);
+              if(!c) continue;
+              const desvio=haversineKm(origCoord.lat,origCoord.lng,c.lat,c.lng)+haversineKm(c.lat,c.lng,destCoord.lat,destCoord.lng);
+              if(distDirecta>0&&desvio<=distDirecta*1.5) candidatos.push({nombre:lug,coord:c,distOrigen:haversineKm(origCoord.lat,origCoord.lng,c.lat,c.lng)});
             }
+            candidatos.sort((a,b)=>a.distOrigen-b.distOrigen);
+            const viaCoords=candidatos.slice(0,3).map(x=>x.coord);
+            // El listado de lugares que se muestra y se usa después (mapa, link a Google
+            // Maps, generación del itinerario) queda limitado a los que sí están en el camino.
+            op.lugaresEnRuta=candidatos.map(x=>x.nombre);
             const ruta=await getOSRMRoute([origCoord,...viaCoords,destCoord]);
             if(ruta){
               op.km=Math.round(ruta.distKm);

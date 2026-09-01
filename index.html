@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.11";
+const VERSION="8.12";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -260,6 +260,31 @@ async function getOSRMRoute(pts){
     }
   }catch{}
   return null;
+}
+// Pide a OSRM hasta 3 rutas REALES distintas entre origen y destino (parámetro alternatives),
+// en vez de confiar en que la IA invente 3 caminos distintos y adivine sus waypoints —
+// muchas veces esos lugares inventados no están en el camino, o Nominatim los geocodifica
+// mal, y terminan armando desvíos absurdos (mil y pico de km para un viaje de 300).
+// Acá directamente se le pregunta al motor de ruteo real cuántos caminos razonables hay.
+async function getOSRMAlternativas(origCoord,destCoord){
+  try{
+    const coords=`${origCoord.lng},${origCoord.lat};${destCoord.lng},${destCoord.lat}`;
+    const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false&alternatives=true`);
+    const d=await r.json();
+    if(d.code!=="Ok"||!d.routes?.length) return [];
+    const rutas=d.routes.map(ruta=>({
+      coords:ruta.geometry.coordinates.map(([lng,lat])=>[lat,lng]),
+      distKm:ruta.distance/1000,
+      durMin:ruta.duration/60
+    })).sort((a,b)=>a.distKm-b.distKm);
+    // Descarta alternativas casi idénticas a otra ya incluida (mismo camino, diferencia
+    // menor al 2% en distancia) para no repetir la misma ruta como si fueran distintas.
+    const unicas=[];
+    for(const rt of rutas){
+      if(!unicas.some(u=>Math.abs(u.distKm-rt.distKm)/rt.distKm<0.02)) unicas.push(rt);
+    }
+    return unicas;
+  }catch{ return []; }
 }
 // Distancia acumulada (km reales, siguiendo la curva del camino) en cada punto del trazo.
 function cumKmDeRuta(coords){
@@ -1105,13 +1130,25 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
   );
 }
 
-// Link a Google Maps con el recorrido completo (origen → lugares de referencia → destino),
-// para poder abrirlo/gestionarlo directamente ahí (navegación turno a turno, tráfico en vivo, etc).
-function googleMapsDirUrl(origen,destino,lugares){
+// Toma unos pocos puntos intermedios, bien espaciados, del trazo REAL de una ruta (en vez
+// de usar nombres de lugares que la IA pudo haber inventado o que Nominatim geocodifica mal)
+// para armar waypoints de Google Maps — así el link abre el mismo camino real que se verificó.
+function puntosIntermediosDeTrazo(coords,cantidad=6){
+  if(!coords||coords.length<3) return [];
+  const paso=Math.max(1,Math.floor(coords.length/(cantidad+1)));
+  const puntos=[];
+  for(let i=paso;i<coords.length-1&&puntos.length<cantidad;i+=paso) puntos.push(coords[i]);
+  return puntos;
+}
+// Link a Google Maps con el recorrido completo. Si hay un trazo real verificado (rutaCoords),
+// se arma con coordenadas reales del camino; si no, se cae al nombre de origen/destino nomás
+// (sin inventar waypoints de lugares no verificados).
+function googleMapsDirUrl(origen,destino,rutaCoords){
   const base="https://www.google.com/maps/dir/?api=1&travelmode=driving";
   const o=`&origin=${encodeURIComponent(origen+", Argentina")}`;
   const d=`&destination=${encodeURIComponent(destino+", Argentina")}`;
-  const wp=lugares?.length?`&waypoints=${encodeURIComponent(lugares.slice(0,8).map(l=>l+", Argentina").join("|"))}`:"";
+  const intermedios=puntosIntermediosDeTrazo(rutaCoords,8);
+  const wp=intermedios.length?`&waypoints=${encodeURIComponent(intermedios.map(([lat,lng])=>`${lat},${lng}`).join("|"))}`:"";
   return base+o+d+wp;
 }
 // Link a Google Maps con las paradas REALES ya verificadas de un día del itinerario generado
@@ -1127,10 +1164,11 @@ function googleMapsDirUrlDia(paradas){
   return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${origin}&destination=${destination}${wp}`;
 }
 
-// Mini-mapa de previsualización para una de las 3 opciones de ruta: geocodifica origen/destino
-// (y hasta 2 lugares de referencia como waypoints reales) y dibuja el trazo real de OSRM, para
-// que se pueda ver de un vistazo por dónde pasa esa opción antes de generar el itinerario completo.
-function MapaRutaPreview({origen,destino,lugares}){
+// Mini-mapa de previsualización para una de las 3 opciones de ruta. Si ya se verificó un
+// trazo real (rutaCoords, de OSRM) se usa directo — sin volver a geocodificar nada — y si no
+// está disponible, se cae a geocodificar origen/destino y pedir la ruta directa (sin
+// waypoints inventados) para al menos mostrar algo razonable.
+function MapaRutaPreview({origen,destino,rutaCoords}){
   const ref=useRef(null);
   const mapRef=useRef(null);
   const [estado,setEstado]=useState("cargando");
@@ -1138,19 +1176,19 @@ function MapaRutaPreview({origen,destino,lugares}){
     let cancelado=false;
     (async()=>{
       setEstado("cargando");
-      const oc=await geocodeNominatim(origen+", Argentina"); await sleep(700);
-      if(cancelado) return;
-      const dc=await geocodeNominatim(destino+", Argentina"); await sleep(700);
-      if(cancelado) return;
-      if(!oc||!dc){ setEstado("error"); return; }
-      const viaCoords=[];
-      for(const lug of (lugares||[]).slice(0,2)){
-        const c=await geocodeNominatim(lug+", Argentina");
-        await sleep(700);
+      let oc,dc,trazo;
+      if(rutaCoords?.length>1){
+        trazo=rutaCoords;
+        oc={lat:rutaCoords[0][0],lng:rutaCoords[0][1]};
+        dc={lat:rutaCoords[rutaCoords.length-1][0],lng:rutaCoords[rutaCoords.length-1][1]};
+      }else{
+        oc=await geocodeNominatim(origen+", Argentina"); await sleep(700);
         if(cancelado) return;
-        if(c) viaCoords.push(c);
+        dc=await geocodeNominatim(destino+", Argentina"); await sleep(700);
+        if(cancelado) return;
+        if(!oc||!dc){ setEstado("error"); return; }
+        trazo=await getOSRM([oc,dc]);
       }
-      const trazo=await getOSRM([oc,...viaCoords,dc]);
       if(cancelado||!ref.current) return;
       if(mapRef.current){ try{mapRef.current.remove();}catch{} mapRef.current=null; }
       const map=L.map(ref.current,{zoomControl:false,attributionControl:false,dragging:true,scrollWheelZoom:false}).setView([oc.lat,oc.lng],6);
@@ -1173,7 +1211,7 @@ function MapaRutaPreview({origen,destino,lugares}){
       cancelado=true;
       if(mapRef.current){ try{mapRef.current.remove();}catch{} mapRef.current=null; }
     };
-  },[origen,destino]);
+  },[origen,destino,rutaCoords]);
   return(
     <div style={{position:"relative",height:190,borderRadius:12,overflow:"hidden",marginBottom:10,background:"#eef2f6"}}>
       <div ref={ref} style={{width:"100%",height:"100%"}}/>
@@ -1220,8 +1258,9 @@ function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItin
               </div>
               {abierto&&!sel&&(
                 <div style={{marginTop:12,borderTop:"1px solid var(--border)",paddingTop:12}} className="fade-in">
-                  <MapaRutaPreview origen={viaje.origen} destino={viaje.destino} lugares={op.lugaresEnRuta}/>
-                  <a href={googleMapsDirUrl(viaje.origen,viaje.destino,op.lugaresEnRuta)} target="_blank" rel="noreferrer" style={{display:"block",textAlign:"center",background:"#4285f418",color:"#1a73e8",border:"1.5px solid #4285f4",borderRadius:10,padding:"9px 12px",fontSize:13,fontWeight:"bold",textDecoration:"none",marginBottom:10}}>🗺️ Abrir y gestionar esta ruta en Google Maps</a>
+                  <MapaRutaPreview origen={viaje.origen} destino={viaje.destino} rutaCoords={op.rutaCoords}/>
+                  {op.mismoCaminoQueOtras&&<div style={{fontSize:11,color:"#718096",marginBottom:8}}>ℹ️ No hay otro camino pavimentado razonable distinto — comparte el trazo real con las otras opciones, solo cambian los lugares y paradas sugeridas.</div>}
+                  <a href={googleMapsDirUrl(viaje.origen,viaje.destino,op.rutaCoords)} target="_blank" rel="noreferrer" style={{display:"block",textAlign:"center",background:"#4285f418",color:"#1a73e8",border:"1.5px solid #4285f4",borderRadius:10,padding:"9px 12px",fontSize:13,fontWeight:"bold",textDecoration:"none",marginBottom:10}}>🗺️ Abrir y gestionar esta ruta en Google Maps</a>
                   {!op.verificado&&<div style={{fontSize:11,color:"#dd6b20",marginBottom:10}}>⚠️ No se pudo verificar la distancia real todavía — son valores estimados por la IA.</div>}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
                     <div style={{background:"#f7fafc",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
@@ -1669,42 +1708,33 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
       }
       if(!parsed.opciones?.length) throw new Error("La IA no devolvió opciones. Probá reintentar o revisar tu API Key.");
 
-      // La IA "adivina" los km/tiempo de memoria y puede errar bastante (ej: decir 300km
-      // cuando en realidad son 430). Antes de mostrar las opciones, se verifica la distancia
-      // y el tiempo de manejo REALES de cada una contra OSRM (pasando por los lugares de
-      // referencia que sugirió como waypoints), y se pisan los valores que dio la IA.
+      // La IA "adivina" los km/tiempo y los lugares de memoria y puede errar mucho (decir
+      // 300km cuando son 430, o mencionar un lugar que ni está en el camino). En vez de usar
+      // esos lugares inventados como waypoints para armar la ruta (eso fue lo que causaba
+      // desvíos absurdos de miles de km), directamente se le pide al motor de ruteo real
+      // (OSRM) hasta 3 caminos DISTINTOS y de verdad transitables entre origen y destino, y
+      // esos son los que se muestran — los "lugares en ruta" de la IA quedan solo como texto
+      // descriptivo, ya no se usan para calcular la ruta.
       try{
         const origCoord=origCoordChk,destCoord=destCoordChk;
         if(origCoord&&destCoord){
-          const distDirecta=haversineKm(origCoord.lat,origCoord.lng,destCoord.lat,destCoord.lng);
-          for(const op of parsed.opciones){
-            // La IA a veces menciona lugares que NO están en el camino real (ej: un lugar
-            // en la dirección opuesta), y si se usan igual como waypoint, OSRM arma una
-            // ruta con un desvío enorme (y Google Maps después muestra ese despropósito).
-            // Se descarta cualquier lugar cuyo desvío implique más de 1.5x la distancia
-            // directa origen→destino — solo se usan como waypoints los que están de veras
-            // en el camino.
-            const candidatos=[];
-            for(const lug of (op.lugaresEnRuta||[]).slice(0,5)){
-              const c=await geocodeNominatim(lug+", Argentina");
-              await sleep(1100);
-              if(!c) continue;
-              const desvio=haversineKm(origCoord.lat,origCoord.lng,c.lat,c.lng)+haversineKm(c.lat,c.lng,destCoord.lat,destCoord.lng);
-              if(distDirecta>0&&desvio<=distDirecta*1.5) candidatos.push({nombre:lug,coord:c,distOrigen:haversineKm(origCoord.lat,origCoord.lng,c.lat,c.lng)});
-            }
-            candidatos.sort((a,b)=>a.distOrigen-b.distOrigen);
-            const viaCoords=candidatos.slice(0,3).map(x=>x.coord);
-            // El listado de lugares que se muestra y se usa después (mapa, link a Google
-            // Maps, generación del itinerario) queda limitado a los que sí están en el camino.
-            op.lugaresEnRuta=candidatos.map(x=>x.nombre);
-            const ruta=await getOSRMRoute([origCoord,...viaCoords,destCoord]);
+          const rutasReales=await getOSRMAlternativas(origCoord,destCoord);
+          parsed.opciones.forEach((op,i)=>{
+            const ruta=rutasReales[Math.min(i,rutasReales.length-1)];
             if(ruta){
               op.km=Math.round(ruta.distKm);
               op.tiempoManejo=fmtDuracionMin(Math.round(ruta.durMin));
               op.tiempoTotal=fmtDuracionMin(Math.round(ruta.durMin*1.35+30));
               op.verificado=true;
+              op.rutaCoords=ruta.coords;
+              op.rutaDistKm=ruta.distKm;
+              op.rutaDurMin=ruta.durMin;
+              // Si hay una sola ruta real disponible, todas las opciones comparten el mismo
+              // camino real (es honesto: muchas veces solo existe un camino pavimentado
+              // razonable) — se avisa en vez de fingir que son caminos distintos.
+              if(rutasReales.length===1&&parsed.opciones.length>1) op.mismoCaminoQueOtras=true;
             }
-          }
+          });
         }
       }catch{} // si falla la verificación, se muestran igual los valores estimados por la IA
 
@@ -1724,21 +1754,22 @@ JSON: {"opciones":[{"nombre":"Ruta rapida","resumen":"por que conviene","rutasUs
   // máximo MAX_KM_DIA km por día, siempre avanzando sobre el camino real — nunca saltando
   // a un lugar que no está en el camino.
   const construirEsqueletoReal=async(opcion,totalDias)=>{
-    const origCoord=await geocodeNominatim(viaje.origen+", Argentina"); await sleep(1100);
-    const destCoord=await geocodeNominatim(viaje.destino+", Argentina"); await sleep(1100);
-    if(!origCoord||!destCoord) return null;
-
-    // Si la opción elegida sugiere localidades de referencia (ej: "Cafayate"), las usamos
-    // como waypoints reales para que la ruta de OSRM efectivamente pase por ahí (ruta
-    // panorámica real), en vez de solo confiar en el nombre.
-    const viaCoords=[];
-    for(const lug of (opcion?.lugaresEnRuta||[]).slice(0,3)){
-      const c=await geocodeNominatim(lug+", Argentina");
-      await sleep(1100);
-      if(c) viaCoords.push(c);
+    // La opción ya trae, desde que se armaron las 3 opciones, un trazo real verificado por
+    // OSRM (opcion.rutaCoords) — se reusa directo en vez de volver a geocodificar los
+    // "lugares en ruta" que sugirió la IA como waypoints (eso es lo que generaba desvíos
+    // absurdos cuando algún lugar no estaba realmente en el camino).
+    let ruta,origCoord,destCoord;
+    if(opcion?.rutaCoords?.length>1){
+      ruta={coords:opcion.rutaCoords,distKm:opcion.rutaDistKm,durMin:opcion.rutaDurMin};
+      origCoord={lat:opcion.rutaCoords[0][0],lng:opcion.rutaCoords[0][1]};
+      destCoord={lat:opcion.rutaCoords[opcion.rutaCoords.length-1][0],lng:opcion.rutaCoords[opcion.rutaCoords.length-1][1]};
+    }else{
+      origCoord=await geocodeNominatim(viaje.origen+", Argentina"); await sleep(1100);
+      destCoord=await geocodeNominatim(viaje.destino+", Argentina"); await sleep(1100);
+      if(!origCoord||!destCoord) return null;
+      ruta=await getOSRMRoute([origCoord,destCoord]);
+      if(!ruta) return null;
     }
-    const ruta=await getOSRMRoute([origCoord,...viaCoords,destCoord]);
-    if(!ruta) return null;
     const distKm=ruta.distKm;
     const cum=cumKmDeRuta(ruta.coords);
 

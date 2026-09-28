@@ -42,7 +42,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.12";
+const VERSION="8.13";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -2028,6 +2028,33 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
               return rm?{...r,nombre:rm.nombre}:r;
             });
           }
+        }
+
+        // Reordena las paradas del día según dónde caen REALMENTE a lo largo del camino, en
+        // vez de confiar en el orden en que la IA las mencionó. Cada lugar puede estar bien
+        // ubicado individualmente y aun así generar un zigzag enorme si se visitan en el
+        // orden equivocado (ej: ir, volver un poco, ir de nuevo) — por eso se ordenan por su
+        // posición real sobre el trazo (ida: de menor a mayor km recorrido; vuelta: al revés,
+        // porque ese tramo se recorre yendo del km más alto al más bajo).
+        if(hayTramoReal){
+          const pasoPos=Math.max(1,Math.floor(esqueletoInfo.rutaCoords.length/500));
+          const posicionEnRutaKm=(lat,lng)=>{
+            let mejorIdx=0,mejorDist=Infinity;
+            for(let i=0;i<esqueletoInfo.rutaCoords.length;i+=pasoPos){
+              const dd=haversineKm(lat,lng,esqueletoInfo.rutaCoords[i][0],esqueletoInfo.rutaCoords[i][1]);
+              if(dd<mejorDist){mejorDist=dd;mejorIdx=i;}
+            }
+            return esqueletoInfo.rutaCum[mejorIdx];
+          };
+          const esVuelta=tipoDia==="vuelta";
+          const conPos=parsedDia.paradas.map((p,idx)=>({p,idx,pos:esAR(p.lat,p.lng)?posicionEnRutaKm(p.lat,p.lng):null}));
+          conPos.sort((a,b)=>{
+            if(a.pos==null&&b.pos==null) return a.idx-b.idx;
+            if(a.pos==null) return 1;
+            if(b.pos==null) return -1;
+            return esVuelta?(b.pos-a.pos):(a.pos-b.pos);
+          });
+          parsedDia.paradas=conPos.map(x=>x.p);
         }
 
         // Tiempos y distancias REALES (OSRM) entre paradas consecutivas con coordenadas

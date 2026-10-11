@@ -1,5 +1,5 @@
-// ViajeFácil Service Worker v3
-const CACHE = 'viajefacil-v3';
+// ViajeFácil Service Worker v5
+const CACHE = 'viajefacil-v5';
 const ARCHIVOS = [
   './',
   './index.html',

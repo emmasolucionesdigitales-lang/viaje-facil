@@ -12,6 +12,9 @@
 <link rel="apple-touch-icon" href="icon-192.png"/>
 <link rel="shortcut icon" href="icon-192.png" type="image/png"/>
 <link rel="icon" href="icon-192.png" type="image/png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Space+Grotesk:wght@400;500;600;700&amp;family=Work+Sans:wght@300;400;500;600&amp;family=Bricolage+Grotesque:wght@600;700;800&amp;family=Sora:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -20,12 +23,41 @@
 <style>
 :root{
   --bg:#f0f4f8; --card-bg:#ffffff; --text:#2d3748; --text-soft:#718096; --border:#e2e8f0; --input-bg:#ffffff;
+  --accent:#2b6cb0; --accent-ink:#ffffff; --font-display:system-ui,-apple-system,sans-serif; --font-body:system-ui,-apple-system,sans-serif;
+  --radius:14px; --card-shadow:0 1px 6px rgba(0,0,0,0.08); --card-border:none;
 }
 [data-theme="dark"]{
   --bg:#10141c; --card-bg:#1c232e; --text:#e6edf3; --text-soft:#9aa7b5; --border:#30394a; --input-bg:#151b25;
 }
+/* ── Apariencias (estilos visuales completos) ─────────────────────── */
+[data-estilo="andina"]{
+  --bg:#F5EFE2; --card-bg:#ffffff; --text:#2B2118; --text-soft:#7A6F5C; --border:#E6DCC7; --input-bg:#ffffff;
+  --accent:#C1613C; --accent-ink:#ffffff;
+  --font-display:'Fraunces',serif; --font-body:'Manrope',sans-serif;
+  --radius:16px; --card-shadow:0 2px 10px rgba(43,33,24,0.10); --card-border:none;
+}
+[data-estilo="andina"][data-theme="dark"]{
+  --bg:#1C1611; --card-bg:#26201A; --text:#F0E9DC; --text-soft:#B5A891; --border:#3A322A; --input-bg:#221C16;
+  --accent:#D97A54;
+}
+[data-estilo="nordico"]{
+  --bg:#FAF9F6; --card-bg:#ffffff; --text:#16181D; --text-soft:#6B7280; --border:#E3DFD3; --input-bg:#ffffff;
+  --accent:#24314A; --accent-ink:#ffffff;
+  --font-display:'Space Grotesk',sans-serif; --font-body:'Work Sans',sans-serif;
+  --radius:4px; --card-shadow:none; --card-border:1px solid var(--border);
+}
+[data-estilo="nordico"][data-theme="dark"]{
+  --bg:#14161B; --card-bg:#1C1F26; --text:#F2F1EE; --text-soft:#9CA3AF; --border:#2E323B; --input-bg:#20242C;
+  --accent:#5B7FB5;
+}
+[data-estilo="nocturno"]{
+  --bg:radial-gradient(ellipse at top,#1B2231 0%,#0B0F17 70%); --card-bg:#1B2231; --text:#F4F1EA; --text-soft:#A9AFC3; --border:#2A3348; --input-bg:#232B3D;
+  --accent:#E8B15C; --accent-ink:#16110A;
+  --font-display:'Bricolage Grotesque',serif; --font-body:'Sora',sans-serif;
+  --radius:18px; --card-shadow:0 4px 20px rgba(0,0,0,0.35); --card-border:1px solid var(--border);
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);font-family:system-ui,-apple-system,sans-serif;overflow-x:hidden;transition:background .2s}
+body{background:var(--bg);font-family:var(--font-body),system-ui,-apple-system,sans-serif;overflow-x:hidden;transition:background .2s}
 input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 .leaflet-container{font-family:system-ui!important}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.5)}}
@@ -42,7 +74,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid #4299e1}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-const VERSION="8.13";
+const VERSION="8.15";
 
 // ── LOCALSTORAGE ──────────────────────────────────────────
 const LS={
@@ -75,6 +107,20 @@ const TABS=[
   {id:"mapa",     icon:"🗺️",label:"Mapa",    color:"#e53e3e"},
   {id:"gastos",   icon:"💰",label:"Gastos",  color:"#d69e2e"},
   {id:"historial",icon:"📋",label:"Historial",color:"#718096"},
+];
+const ESTILOS=[
+  {id:"andina",  nombre:"Ruta Andina",     desc:"Cálido, terracota y montaña",        accent:"#C1613C"},
+  {id:"nordico", nombre:"Nórdico Minimal", desc:"Blanco, aire y un solo acento",       accent:"#24314A"},
+  {id:"nocturno",nombre:"Nocturno Premium",desc:"Oscuro, elegante y dorado (siempre modo noche)",accent:"#E8B15C"},
+];
+// "Diseño" = la estructura/forma de la pantalla de Inicio y la barra de navegación.
+// Es independiente de "Apariencia" (los colores/tipografía de arriba): los 4 diseños
+// toman sus colores de las mismas variables CSS, así que combinan con cualquier estilo.
+const DISENOS=[
+  {id:"clasico",   icon:"🗂️",nombre:"Clásico",   desc:"El diseño de siempre, en tarjetas"},
+  {id:"panel",     icon:"📊",nombre:"Panel",      desc:"Tipo dashboard: datos en tiles"},
+  {id:"bitacora",  icon:"📖",nombre:"Bitácora",   desc:"Tipo revista de viaje"},
+  {id:"itinerario",icon:"🎫",nombre:"Itinerario", desc:"Línea de tiempo tipo pasaje"},
 ];
 const WMO={0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫️",48:"🌫️",51:"🌦️",53:"🌦️",55:"🌧️",61:"🌧️",63:"🌧️",65:"⛈️",80:"🌦️",81:"🌧️",82:"⛈️",95:"⛈️",96:"⛈️",99:"⛈️"};
 const ALOJ_ICON={camping:"⛺",hostel:"🛏️",hotel:"🏨",cabaña:"🏡"};
@@ -535,9 +581,9 @@ const navegarA=(lat,lng,nombre)=>{
 // ── ESTILOS ───────────────────────────────────────────────
 const S={
   app:  {maxWidth:430,margin:"0 auto",minHeight:"100vh",background:"var(--bg)",position:"relative",paddingBottom:72},
-  hdr:  c=>({background:c,padding:"16px 20px 14px",color:"white"}),
-  card: {background:"var(--card-bg)",color:"var(--text)",borderRadius:14,padding:16,marginBottom:12,boxShadow:"0 1px 6px rgba(0,0,0,0.08)"},
-  btn:  (c,l)=>({background:l?`${c}18`:c,color:l?c:"white",border:l?`1.5px solid ${c}`:"none",borderRadius:10,padding:"11px 16px",fontWeight:"bold",fontSize:14,cursor:"pointer",width:"100%",marginTop:8,display:"block"}),
+  hdr:  c=>({background:c,padding:"16px 20px 14px",color:"var(--accent-ink)",fontFamily:"var(--font-display)"}),
+  card: {background:"var(--card-bg)",color:"var(--text)",borderRadius:"var(--radius)",padding:16,marginBottom:12,boxShadow:"var(--card-shadow)",border:"var(--card-border)"},
+  btn:  (c,l)=>({background:l?`${c}18`:c,color:l?c:"white",border:l?`1.5px solid ${c}`:"none",borderRadius:"var(--radius)",padding:"11px 16px",fontWeight:"bold",fontSize:14,cursor:"pointer",width:"100%",marginTop:8,display:"block",fontFamily:"var(--font-display)"}),
   inp:  {width:"100%",border:"1.5px solid var(--border)",borderRadius:10,padding:"10px 13px",fontSize:14,background:"var(--input-bg)",color:"var(--text)",marginBottom:4},
   lbl:  {fontSize:12,color:"var(--text-soft)",marginBottom:5,display:"block",marginTop:12},
   ovr:  {position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"},
@@ -850,7 +896,7 @@ function ModalEditarParada({f,setF,onGuardar,onCerrar}){
 }
 
 // ── PANTALLAS ─────────────────────────────────────────────
-function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,lugaresGuardados,onAgregarLugar,onEliminarLugar}){
+function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,estilo,setEstilo,diseno,setDiseno,lugaresGuardados,onAgregarLugar,onEliminarLugar}){
   const [tmp,setTmp]=useState(apiKey);
   const [ok,setOk]=useState(false);
   const [nombreNuevo,setNombreNuevo]=useState("");
@@ -863,7 +909,7 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,lugaresGuardados,
   };
   return(
     <div>
-      <div style={S.hdr("#4a5568")}>
+      <div style={S.hdr("var(--accent)")}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:"bold"}}>⚙️ Config</div><div style={{fontSize:10,opacity:.6,background:"rgba(255,255,255,0.2)",borderRadius:6,padding:"2px 6px"}}>v{VERSION}</div></div>
         <div style={{fontSize:13,opacity:.8}}>Configuración guardada en tu celular</div>
       </div>
@@ -896,13 +942,46 @@ function PantallaConfig({apiKey,setApiKey,darkMode,setDarkMode,lugaresGuardados,
           <button style={S.btn("#4a5568")} onClick={agregar}>➕ Agregar lugar</button>
         </div>
         <div style={S.card}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14}}>{darkMode?"🌙 Modo oscuro":"☀️ Modo claro"}</div>
-            <button onClick={()=>setDarkMode(d=>!d)} aria-label="Cambiar entre modo claro y oscuro" style={{background:darkMode?"#2b6cb0":"#e2e8f0",border:"none",borderRadius:20,width:52,height:28,cursor:"pointer",position:"relative",flexShrink:0}}>
-              <div style={{position:"absolute",top:3,left:darkMode?27:3,width:22,height:22,borderRadius:"50%",background:"white",transition:"left .2s"}}/>
-            </button>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14,marginBottom:10}}>🎨 Apariencia</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {ESTILOS.map(e=>(
+              <button key={e.id} onClick={()=>setEstilo(e.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:estilo===e.id?`2px solid ${e.accent}`:"1.5px solid var(--border)",background:estilo===e.id?`${e.accent}18`:"transparent",cursor:"pointer",textAlign:"left",width:"100%"}}>
+                <span style={{width:22,height:22,borderRadius:"50%",background:e.accent,flexShrink:0,border:"2px solid var(--card-bg)",boxShadow:"0 0 0 1px var(--border)"}}/>
+                <span style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:"bold",fontSize:13,color:"var(--text)"}}>{e.nombre}</div>
+                  <div style={{fontSize:11,color:"var(--text-soft)"}}>{e.desc}</div>
+                </span>
+                {estilo===e.id&&<span style={{fontSize:16,flexShrink:0}}>✅</span>}
+              </button>
+            ))}
           </div>
         </div>
+        <div style={S.card}>
+          <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14,marginBottom:4}}>🧩 Diseño</div>
+          <div style={{fontSize:12,color:"var(--text-soft)",marginBottom:10}}>Cómo se acomoda la pantalla de Inicio y la navegación. Combina con cualquier Apariencia de arriba.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {DISENOS.map(d=>(
+              <button key={d.id} onClick={()=>setDiseno(d.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:diseno===d.id?"2px solid var(--accent)":"1.5px solid var(--border)",background:"transparent",cursor:"pointer",textAlign:"left",width:"100%"}}>
+                <span style={{fontSize:18,flexShrink:0}}>{d.icon}</span>
+                <span style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:"bold",fontSize:13,color:"var(--text)"}}>{d.nombre}</div>
+                  <div style={{fontSize:11,color:"var(--text-soft)"}}>{d.desc}</div>
+                </span>
+                {diseno===d.id&&<span style={{fontSize:16,flexShrink:0}}>✅</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+        {estilo!=="nocturno"&&(
+          <div style={S.card}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14}}>{darkMode?"🌙 Modo oscuro":"☀️ Modo claro"}</div>
+              <button onClick={()=>setDarkMode(d=>!d)} aria-label="Cambiar entre modo claro y oscuro" style={{background:darkMode?"var(--accent)":"#e2e8f0",border:"none",borderRadius:20,width:52,height:28,cursor:"pointer",position:"relative",flexShrink:0}}>
+                <div style={{position:"absolute",top:3,left:darkMode?27:3,width:22,height:22,borderRadius:"50%",background:"white",transition:"left .2s"}}/>
+              </button>
+            </div>
+          </div>
+        )}
         <div style={S.card}>
           <div style={{fontWeight:"bold",color:"var(--text)",fontSize:14,marginBottom:8}}>🔔 Notificaciones</div>
           <div style={{fontSize:13,color:"var(--text-soft)",marginBottom:10}}>Activá las notificaciones para recibir alertas del tiempo de devolución aunque la app esté cerrada.</div>
@@ -1010,10 +1089,130 @@ function CardProximaParada({opcionSel,completadas,onCompletar}){
   );
 }
 
-function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pct,alerta,opcionSel,historial,clima,equipaje,setEquipaje,completadas,onCompletar,onNuevo,onEditarViaje,onIniciar,onFinalizar,onCompartir,setTab,onReintentar,sugerencias,loadingSug,sugError,onSugerir,onPlanificarSugerencia}){
+// Tarjeta principal del viaje en Inicio. Usa SIEMPRE variables CSS del tema activo
+// (var(--accent), var(--card-bg), var(--text)...) para que los 4 diseños combinen
+// con cualquiera de las 3 apariencias de color elegidas en Configuración.
+function HeroViaje({viaje,estado,diseno,onEditarViaje,clima,opcionSel,opciones}){
+  const km=opcionSel?.km||null;
+  const temp=clima?.temperature_2m_max?.length?Math.round(clima.temperature_2m_max[0]):null;
+  const totalOp=opciones?.length||0;
+  const verificadasCount=opciones?.filter(o=>o.verificado).length||0;
+  const horaSalida=(()=>{try{return fmtHoraCorta(new Date(viaje.fRetiro));}catch{return "—";}})();
+  const puedeEditar=estado!=="viajando";
+
+  if(diseno==="panel") return(
+    <div style={{background:"var(--card-bg)",border:"1px solid var(--border)",borderRadius:"var(--radius)",padding:16,marginBottom:12,position:"relative"}}>
+      {puedeEditar&&<button onClick={onEditarViaje} aria-label="Editar datos del viaje" style={{position:"absolute",top:14,right:14,background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,padding:"4px 10px",color:"var(--text)",cursor:"pointer",fontSize:11,fontWeight:"bold",fontFamily:"var(--font-body)"}}>✏️ Editar</button>}
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"var(--text-soft)",textTransform:"uppercase"}}>{estado==="viajando"?"En viaje":"Viaje planificado"}</div>
+      <div style={{fontFamily:"var(--font-display)",fontSize:19,fontWeight:700,color:"var(--text)",marginTop:6,lineHeight:1.2}}>{viaje.origen} → {viaje.destino}</div>
+      <div style={{fontSize:12,color:"var(--text-soft)",marginTop:3}}>👥 {viaje.pers} personas · sale {horaSalida}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:14}}>
+        <div style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontSize:17,fontWeight:700,color:"var(--text)",fontVariantNumeric:"tabular-nums"}}>{km?`${km} km`:"—"}</div>
+          <div style={{fontSize:10,color:"var(--text-soft)"}}>distancia real</div>
+        </div>
+        <div style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontSize:17,fontWeight:700,color:"var(--text)",fontVariantNumeric:"tabular-nums"}}>{temp!=null?`${temp}°C`:"—"}</div>
+          <div style={{fontSize:10,color:"var(--text-soft)"}}>en {viaje.destino}</div>
+        </div>
+      </div>
+      {totalOp>0&&(
+        <div style={{marginTop:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--text-soft)",marginBottom:4}}><span>Rutas verificadas</span><span>{verificadasCount}/{totalOp}</span></div>
+          <div style={{display:"flex",gap:3}}>
+            {Array.from({length:totalOp}).map((_,i)=>(<div key={i} style={{flex:1,height:5,borderRadius:3,background:i<verificadasCount?"var(--accent)":"var(--border)"}}/>))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if(diseno==="bitacora") return(
+    <div style={{background:"var(--card-bg)",borderRadius:"var(--radius)",marginBottom:12,overflow:"hidden",border:"var(--card-border)",boxShadow:"var(--card-shadow)"}}>
+      <div style={{background:"var(--accent)",padding:"18px 18px 15px",position:"relative"}}>
+        {puedeEditar&&<button onClick={onEditarViaje} aria-label="Editar datos del viaje" style={{position:"absolute",top:12,right:14,background:"rgba(255,255,255,0.25)",border:"none",borderRadius:20,padding:"4px 10px",color:"var(--accent-ink)",cursor:"pointer",fontSize:11,fontWeight:"bold",fontFamily:"var(--font-body)"}}>✏️ Editar</button>}
+        <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"var(--accent-ink)",opacity:.85,fontWeight:600}}>{estado==="viajando"?"Viaje en curso":"Próximo viaje"}</div>
+        <div style={{fontFamily:"var(--font-display)",fontWeight:600,fontSize:22,color:"var(--accent-ink)",marginTop:6,lineHeight:1.15}}>{viaje.origen}<br/>→ {viaje.destino}</div>
+      </div>
+      <div style={{padding:16}}>
+        <div style={{display:"flex",gap:16,fontSize:12,color:"var(--text-soft)"}}>
+          <span>👥 {viaje.pers} personas</span>
+          <span>🕐 sale {horaSalida}</span>
+        </div>
+        {totalOp>0&&(
+          <>
+            <div style={{height:1,background:"var(--border)",margin:"14px 0"}}/>
+            <div style={{display:"flex",gap:10}}>
+              <div style={{width:3,background:"var(--accent)",borderRadius:2,alignSelf:"stretch"}}/>
+              <div style={{fontFamily:"var(--font-display)",fontStyle:"italic",fontSize:14,color:"var(--text)",lineHeight:1.4}}>{verificadasCount} de {totalOp} rutas ya verificadas contra el mapa real.</div>
+            </div>
+          </>
+        )}
+        {(km||temp!=null)&&(
+          <div style={{display:"flex",gap:18,marginTop:12,flexWrap:"wrap"}}>
+            {km&&<div><span style={{fontFamily:"var(--font-display)",fontWeight:600,fontSize:15,color:"var(--text)"}}>{km} km</span> <span style={{fontSize:11,color:"var(--text-soft)"}}>ruta elegida</span></div>}
+            {temp!=null&&<div><span style={{fontFamily:"var(--font-display)",fontWeight:600,fontSize:15,color:"var(--text)"}}>{temp}°C</span> <span style={{fontSize:11,color:"var(--text-soft)"}}>en {viaje.destino}</span></div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  if(diseno==="itinerario"){
+    const pasos=[
+      {l:"Salida",m:viaje.origen,r:horaSalida,on:true},
+      ...(totalOp>0?[{l:"Distancia real",m:`${verificadasCount}/${totalOp} rutas verificadas`,r:km?`${km} km`:"—"}]:[]),
+      ...(temp!=null?[{l:`Clima en ${viaje.destino}`,m:"pronóstico",r:`${temp}°C`}]:[]),
+      {l:"Devolución del auto",m:"volver antes de",r:(()=>{try{return fmtHoraCorta(new Date(viaje.fDevol));}catch{return "—";}})()},
+    ];
+    return(
+      <div style={{background:"var(--card-bg)",border:"1px solid var(--border)",borderRadius:4,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"14px 16px",borderBottom:"1px solid var(--border)"}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"var(--text-soft)",textTransform:"uppercase"}}>{estado==="viajando"?"Viaje activo":"Viaje planificado"}</div>
+            <div style={{fontFamily:"var(--font-display)",fontSize:14,color:"var(--text)",marginTop:3,fontWeight:600}}>{viaje.origen} → {viaje.destino}</div>
+          </div>
+          {puedeEditar&&<button onClick={onEditarViaje} aria-label="Editar datos del viaje" style={{background:"none",border:"1px solid var(--border)",borderRadius:2,padding:"5px 10px",color:"var(--text)",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"var(--font-body)",flexShrink:0}}>Editar</button>}
+        </div>
+        <div style={{padding:"14px 16px 2px"}}>
+          {pasos.map((s,i)=>(
+            <div key={i} style={{display:"flex",gap:12}}>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",width:14,flexShrink:0}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:s.on?"var(--accent)":"transparent",border:s.on?"none":"2px solid var(--text-soft)",flexShrink:0}}/>
+                {i<pasos.length-1&&<div style={{width:1.5,flex:1,background:"var(--border)",margin:"2px 0"}}/>}
+              </div>
+              <div style={{flex:1,display:"flex",justifyContent:"space-between",gap:10,paddingBottom:16,minWidth:0}}>
+                <div style={{minWidth:0}}><div style={{fontSize:11,color:"var(--text-soft)"}}>{s.l}</div><div style={{fontSize:13,fontWeight:600,color:"var(--text)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.m}</div></div>
+                <div style={{fontFamily:"var(--font-display)",fontSize:13,fontWeight:600,color:"var(--text)",textAlign:"right",flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{s.r}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // "clasico": el diseño original, con los mismos datos, pero ahora usando var(--accent)
+  // en vez del celeste fijo de antes — así también combina con las 3 apariencias de color.
+  return(
+    <div style={{...S.card,background:"var(--accent)",color:"var(--accent-ink)",position:"relative"}}>
+      {puedeEditar&&<button onClick={onEditarViaje} aria-label="Editar datos del viaje" style={{position:"absolute",top:12,right:12,background:"rgba(255,255,255,0.22)",border:"none",borderRadius:8,padding:"4px 10px",color:"var(--accent-ink)",cursor:"pointer",fontSize:12,fontWeight:"bold"}}>✏️ Editar</button>}
+      <div style={{fontSize:11,opacity:.85,textTransform:"uppercase",letterSpacing:1}}>{estado==="viajando"?"🚦 EN VIAJE":"✈️ VIAJE PLANIFICADO"}</div>
+      <div style={{fontSize:20,fontWeight:"bold",marginTop:6}}>📍 {viaje.origen}</div>
+      <div style={{fontSize:16,opacity:.92,marginTop:2}}>→ {viaje.destino}</div>
+      {viaje.ruta&&<div style={{fontSize:12,opacity:.75,marginTop:4}}>🛣️ {viaje.ruta}</div>}
+      <div style={{fontSize:12,opacity:.75,marginTop:6}}>👥 {viaje.pers} personas</div>
+      <div style={{fontSize:12,opacity:.75,marginTop:2}}>🏢 Retiro del auto: {fmtDt(viaje.fRetiro)}</div>
+      <div style={{fontSize:12,opacity:.75,marginTop:2}}>🏠 Salida de tu casa: {fmtDt(viaje.horaSalidaCasa||viaje.fRetiro)}</div>
+      <div style={{fontSize:12,opacity:.75,marginTop:2}}>🏢 Devolución del auto: {fmtDt(viaje.fDevol)}</div>
+    </div>
+  );
+}
+
+function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pct,alerta,opcionSel,historial,clima,equipaje,setEquipaje,completadas,onCompletar,onNuevo,onEditarViaje,onIniciar,onFinalizar,onCompartir,setTab,onReintentar,sugerencias,loadingSug,sugError,onSugerir,onPlanificarSugerencia,diseno}){
   return(
     <div>
-      <div style={S.hdr("#2b6cb0")}>
+      <div style={S.hdr("var(--accent)")}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{fontSize:22,fontWeight:"bold"}}>🚗 ViajeFácil</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1062,17 +1261,7 @@ function PantallaInicio({viaje,estado,opciones,loadingIA,iaError,apiKey,tRest,pc
           </>
         ):(
           <>
-            <div style={{...S.card,background:"linear-gradient(135deg,#1a365d,#2b6cb0)",color:"white",position:"relative"}}>
-              {estado!=="viajando"&&<button onClick={onEditarViaje} aria-label="Editar datos del viaje" style={{position:"absolute",top:12,right:12,background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"4px 10px",color:"white",cursor:"pointer",fontSize:12,fontWeight:"bold"}}>✏️ Editar</button>}
-              <div style={{fontSize:11,opacity:.8,textTransform:"uppercase",letterSpacing:1}}>{estado==="viajando"?"🚦 EN VIAJE":"✈️ VIAJE PLANIFICADO"}</div>
-              <div style={{fontSize:20,fontWeight:"bold",marginTop:6}}>📍 {viaje.origen}</div>
-              <div style={{fontSize:16,opacity:.9,marginTop:2}}>→ {viaje.destino}</div>
-              {viaje.ruta&&<div style={{fontSize:12,opacity:.7,marginTop:4}}>🛣️ {viaje.ruta}</div>}
-              <div style={{fontSize:12,opacity:.7,marginTop:6}}>👥 {viaje.pers} personas</div>
-              <div style={{fontSize:12,opacity:.7,marginTop:2}}>🏢 Retiro del auto: {fmtDt(viaje.fRetiro)}</div>
-              <div style={{fontSize:12,opacity:.7,marginTop:2}}>🏠 Salida de tu casa: {fmtDt(viaje.horaSalidaCasa||viaje.fRetiro)}</div>
-              <div style={{fontSize:12,opacity:.7,marginTop:2}}>🏢 Devolución del auto: {fmtDt(viaje.fDevol)}</div>
-            </div>
+            <HeroViaje viaje={viaje} estado={estado} diseno={diseno} onEditarViaje={onEditarViaje} clima={clima} opcionSel={opcionSel} opciones={opciones}/>
 
             {estado==="viajando"&&(
               <>
@@ -1223,13 +1412,13 @@ function MapaRutaPreview({origen,destino,rutaCoords}){
 
 function PantallaOpciones({opciones,opcionSel,loadingIA,viaje,setTab,generarItinerario,loadingDetalle,generandoIdx,progresoDia,onEliminarParada,onEditarParada,onMoverParada,onAbrirAgregarParada,onCompartir}){
   const [expandido,setExpandido]=useState(null);
-  if(!viaje) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"var(--text-soft)",marginTop:8}}>Creá un viaje en 🏠 Inicio</div></div></div></div>);
-  if(loadingIA) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44,animation:"spin 1s linear infinite"}}>🤖</div><div style={{fontWeight:"bold",marginTop:12}}>Generando...</div></div></div></div>);
-  if(!opciones?.length) return(<div><div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44}}>🗂️</div><div style={{fontWeight:"bold",marginTop:10}}>Sin opciones</div><div style={{fontSize:13,color:"var(--text-soft)",marginTop:6}}>Generá en 🏠 Inicio</div></div></div></div>);
+  if(!viaje) return(<div><div style={S.hdr("var(--accent)")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:36}}><div style={{fontSize:48}}>🗂️</div><div style={{color:"var(--text-soft)",marginTop:8}}>Creá un viaje en 🏠 Inicio</div></div></div></div>);
+  if(loadingIA) return(<div><div style={S.hdr("var(--accent)")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44,animation:"spin 1s linear infinite"}}>🤖</div><div style={{fontWeight:"bold",marginTop:12}}>Generando...</div></div></div></div>);
+  if(!opciones?.length) return(<div><div style={S.hdr("var(--accent)")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:32}}><div style={{fontSize:44}}>🗂️</div><div style={{fontWeight:"bold",marginTop:10}}>Sin opciones</div><div style={{fontSize:13,color:"var(--text-soft)",marginTop:6}}>Generá en 🏠 Inicio</div></div></div></div>);
   const cols=["#2b6cb0","#38a169","#805ad5"];
   return(
     <div>
-      <div style={S.hdr("#38a169")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div><div style={{fontSize:13,opacity:.8}}>{viaje.origen} → {viaje.destino}</div></div>
+      <div style={S.hdr("var(--accent)")}><div style={{fontSize:22,fontWeight:"bold"}}>🗂️ Opciones</div><div style={{fontSize:13,opacity:.8}}>{viaje.origen} → {viaje.destino}</div></div>
       <div style={{padding:16}}>
         {opciones.map((op,oi)=>{
           const sel=opcionSel?.nombre===op.nombre&&opcionSel?.dias;
@@ -1343,7 +1532,7 @@ function PantallaMapa({viaje,opcionSel,posGPS,estado}){
   }))||[];
   return(
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 72px)"}}>
-      <div style={{...S.hdr("#e53e3e"),padding:"12px 20px 10px"}}><div style={{fontSize:19,fontWeight:"bold"}}>🗺️ Mapa e Itinerario</div><div style={{fontSize:12,opacity:.8}}>{opcionSel?.nombre||"Elegí una opción"}</div></div>
+      <div style={{...S.hdr("var(--accent)"),padding:"12px 20px 10px"}}><div style={{fontSize:19,fontWeight:"bold"}}>🗺️ Mapa e Itinerario</div><div style={{fontSize:12,opacity:.8}}>{opcionSel?.nombre||"Elegí una opción"}</div></div>
       {!viaje&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,color:"#a0aec0"}}><div style={{fontSize:48}}>🗺️</div><div style={{marginTop:10}}>Creá un viaje en 🏠</div></div>}
       {viaje&&!opcionSel?.dias&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,color:"#a0aec0",textAlign:"center",padding:20}}><div style={{fontSize:48}}>🗂️</div><div style={{marginTop:10,color:"#4a5568"}}>Elegí una opción en 🗂️</div></div>}
       {viaje&&opcionSel?.dias&&(
@@ -1427,7 +1616,7 @@ function PantallaGastos({gastos,setGastos,pers,setPers,setModal}){
   const porPers=pers>0?Math.ceil(total/pers):total;
   return(
     <div>
-      <div style={S.hdr("#d69e2e")}><div style={{fontSize:22,fontWeight:"bold"}}>💰 Gastos</div><div style={{fontSize:13,opacity:.8}}>Total: {fmtM(total)}</div></div>
+      <div style={S.hdr("var(--accent)")}><div style={{fontSize:22,fontWeight:"bold"}}>💰 Gastos</div><div style={{fontSize:13,opacity:.8}}>Total: {fmtM(total)}</div></div>
       <div style={{padding:16}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
           {Object.entries(CATS).map(([k,c])=>{const t=gastos.filter(g=>g.cat===k).reduce((s,g)=>s+g.monto,0);return(<div key={k} style={{...S.card,textAlign:"center",padding:12,marginBottom:0,borderLeft:`4px solid ${c.color}`}}><div style={{fontSize:22}}>{c.icon}</div><div style={{fontSize:12,color:"var(--text-soft)",marginTop:2}}>{c.label}</div><div style={{fontSize:16,fontWeight:"bold",color:c.color}}>{fmtM(t)}</div></div>);})}
@@ -1453,10 +1642,10 @@ function PantallaGastos({gastos,setGastos,pers,setPers,setModal}){
 
 function PantallaHistorial({historial,onEliminar}){
   const [verIdx,setVerIdx]=useState(null);
-  if(!historial.length) return(<div><div style={S.hdr("#718096")}><div style={{fontSize:22,fontWeight:"bold"}}>📋 Historial</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:44}}><div style={{fontSize:52}}>🗺️</div><div style={{fontSize:17,fontWeight:"bold",marginTop:14}}>Sin viajes aún</div></div></div></div>);
+  if(!historial.length) return(<div><div style={S.hdr("var(--accent)")}><div style={{fontSize:22,fontWeight:"bold"}}>📋 Historial</div></div><div style={{padding:16}}><div style={{...S.card,textAlign:"center",padding:44}}><div style={{fontSize:52}}>🗺️</div><div style={{fontSize:17,fontWeight:"bold",marginTop:14}}>Sin viajes aún</div></div></div></div>);
   return(
     <div>
-      <div style={S.hdr("#718096")}><div style={{fontSize:22,fontWeight:"bold"}}>📋 Historial</div><div style={{fontSize:13,opacity:.8}}>{historial.length} viaje(s)</div></div>
+      <div style={S.hdr("var(--accent)")}><div style={{fontSize:22,fontWeight:"bold"}}>📋 Historial</div><div style={{fontSize:13,opacity:.8}}>{historial.length} viaje(s)</div></div>
       <div style={{padding:16}}>
         {[...historial].reverse().map((h,i)=>{
           const totalG=h.gastos?.reduce((s,g)=>s+g.monto,0)||0;
@@ -1488,6 +1677,43 @@ function PantallaHistorial({historial,onEliminar}){
   );
 }
 
+// Barra de navegación inferior. Cambia de forma según el "diseño" elegido, pero siempre
+// toma sus colores de las variables CSS del tema activo (var(--accent), var(--card-bg)...).
+function NavBar({tab,setTab,historial,diseno}){
+  if(diseno==="bitacora") return(
+    <div style={{position:"fixed",bottom:"calc(14px + env(safe-area-inset-bottom,0px))",left:"50%",transform:"translateX(-50%)",background:"var(--text)",borderRadius:30,display:"flex",gap:4,padding:"8px 9px",boxShadow:"0 10px 24px rgba(0,0,0,.25)",zIndex:500}}>
+      {TABS.map(t=>(
+        <button key={t.id} onClick={()=>setTab(t.id)} aria-label={t.label} style={{width:34,height:34,borderRadius:"50%",border:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,background:tab===t.id?"var(--accent)":"transparent",color:tab===t.id?"var(--accent-ink)":"var(--bg)",cursor:"pointer",position:"relative"}}>
+          {t.icon}
+          {t.id==="historial"&&historial.length>0&&<div style={{position:"absolute",top:-3,right:-3,background:"var(--accent)",color:"var(--accent-ink)",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center"}}>{historial.length}</div>}
+        </button>
+      ))}
+    </div>
+  );
+  if(diseno==="itinerario") return(
+    <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"var(--card-bg)",borderTop:"1px solid var(--border)",display:"flex",zIndex:500,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
+      {TABS.map(t=>(
+        <button key={t.id} onClick={()=>setTab(t.id)} aria-label={t.label} style={{flex:1,padding:"12px 0 10px",background:"none",border:"none",borderBottom:tab===t.id?"2px solid var(--accent)":"2px solid transparent",cursor:"pointer",fontSize:11,fontWeight:tab===t.id?700:500,color:tab===t.id?"var(--text)":"var(--text-soft)",fontFamily:"var(--font-body)",position:"relative"}}>
+          {t.label}
+          {t.id==="historial"&&historial.length>0&&<div style={{position:"absolute",top:4,right:"50%",transform:"translateX(16px)",background:"var(--accent)",color:"var(--accent-ink)",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center"}}>{historial.length}</div>}
+        </button>
+      ))}
+    </div>
+  );
+  // "clasico" y "panel" comparten la barra inferior clásica (ícono + etiqueta).
+  return(
+    <div style={S.nav}>
+      {TABS.map(t=>(
+        <button key={t.id} style={{...S.nvb(tab===t.id,"var(--accent)"),position:"relative"}} onClick={()=>setTab(t.id)} aria-label={t.label}>
+          <span style={{fontSize:18}}>{t.icon}</span>
+          <span style={{fontSize:9,fontWeight:tab===t.id?"bold":"normal"}}>{t.label}</span>
+          {t.id==="historial"&&historial.length>0&&<div style={{position:"absolute",top:6,right:"50%",transform:"translateX(10px)",background:"#718096",color:"white",borderRadius:"50%",width:15,height:15,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center"}}>{historial.length}</div>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── APP PRINCIPAL ─────────────────────────────────────────
 function App(){
   const [tab,setTab]=useState("inicio");
@@ -1513,6 +1739,8 @@ function App(){
   const [historial,setHistorial]=useState(()=>LS.get("historial",[]));
   const [completadas,setCompletadas]=useState(()=>LS.get("completadas",[]));
   const [darkMode,setDarkMode]=useState(()=>LS.get("darkMode",false));
+  const [estilo,setEstilo]=useState(()=>LS.get("estilo","andina"));
+  const [diseno,setDiseno]=useState(()=>LS.get("diseno","clasico"));
   const [equipaje,setEquipaje]=useState(()=>LS.get("equipaje",[
     {id:1,texto:"📄 DNI y registro de conducir",ok:false},
     {id:2,texto:"💳 Tarjetas y efectivo",ok:false},
@@ -1551,6 +1779,14 @@ function App(){
   useEffect(()=>LS.set("equipaje",equipaje),[equipaje]);
   useEffect(()=>{if(inicioR)LS.set("inicioR",inicioR.toISOString());},[inicioR]);
   useEffect(()=>{document.documentElement.setAttribute("data-theme",darkMode?"dark":"light");LS.set("darkMode",darkMode);},[darkMode]);
+  useEffect(()=>{
+    document.documentElement.setAttribute("data-estilo",estilo);
+    LS.set("estilo",estilo);
+    const meta=document.querySelector('meta[name="theme-color"]');
+    const e=ESTILOS.find(x=>x.id===estilo);
+    if(meta&&e) meta.setAttribute("content",e.accent);
+  },[estilo]);
+  useEffect(()=>LS.set("diseno",diseno),[diseno]);
   useEffect(()=>{
     if(tab==="mapa"){
       [100,400,900].forEach(ms=>setTimeout(()=>{
@@ -2214,26 +2450,18 @@ JSON: {"titulo":"str","kmDelDia":0,"presupuestoDia":{"combustible":0,"alojamient
       <div style={{display:tab==="mapa"?"block":"none",height:"calc(100vh - 72px)"}}>
         <PantallaMapa viaje={viaje} opcionSel={opcionSel} posGPS={posGPS} estado={estado}/>
       </div>
-      {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} clima={clima} equipaje={equipaje} setEquipaje={setEquipaje} completadas={completadas} onCompletar={completarParada} onNuevo={abrirNuevoViaje} onEditarViaje={abrirEditarViaje} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} onCompartir={compartirWhatsApp} setTab={setTab} onReintentar={()=>buscarIA(viaje)} sugerencias={sugerencias} loadingSug={loadingSug} sugError={sugError} onSugerir={sugerirDestinos} onPlanificarSugerencia={planificarDesdeSugerencia}/>}
+      {tab==="inicio"    &&<PantallaInicio viaje={viaje} estado={estado} opciones={opciones} loadingIA={loadingIA} iaError={iaError} apiKey={apiKey} tRest={tRest} pct={pct} alerta={alerta} opcionSel={opcionSel} historial={historial} clima={clima} equipaje={equipaje} setEquipaje={setEquipaje} completadas={completadas} onCompletar={completarParada} onNuevo={abrirNuevoViaje} onEditarViaje={abrirEditarViaje} onIniciar={iniciarViaje} onFinalizar={finalizarViaje} onCompartir={compartirWhatsApp} setTab={setTab} onReintentar={()=>buscarIA(viaje)} sugerencias={sugerencias} loadingSug={loadingSug} sugError={sugError} onSugerir={sugerirDestinos} onPlanificarSugerencia={planificarDesdeSugerencia} diseno={diseno}/>}
       {tab==="opciones"  &&<PantallaOpciones opciones={opciones} opcionSel={opcionSel} loadingIA={loadingIA} viaje={viaje} setTab={setTab} generarItinerario={generarItinerario} loadingDetalle={loadingDetalle} generandoIdx={generandoIdx} progresoDia={progresoDia} onEliminarParada={eliminarParada} onEditarParada={abrirEditarParada} onMoverParada={moverParada} onAbrirAgregarParada={()=>setModal("parada")} onCompartir={compartirWhatsApp}/>}
       {tab==="gastos"    &&<PantallaGastos gastos={gastos} setGastos={setGastos} pers={pers} setPers={setPers} setModal={setModal}/>}
       {tab==="historial" &&<PantallaHistorial historial={historial} onEliminar={id=>setHistorial(p=>p.filter(h=>h.id!==id))}/>}
-      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode} lugaresGuardados={lugaresGuardados} onAgregarLugar={agregarLugarGuardado} onEliminarLugar={eliminarLugarGuardado}/>}
+      {tab==="config"    &&<PantallaConfig apiKey={apiKey} setApiKey={setApiKey} darkMode={darkMode} setDarkMode={setDarkMode} estilo={estilo} setEstilo={setEstilo} diseno={diseno} setDiseno={setDiseno} lugaresGuardados={lugaresGuardados} onAgregarLugar={agregarLugarGuardado} onEliminarLugar={eliminarLugarGuardado}/>}
       {modal==="viaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={crearViaje} onCerrar={()=>setModal(null)} lugaresGuardados={lugaresGuardados}/>}
       {modal==="editarViaje" &&<ModalViaje fV={fV} setFV={setFV} onCrear={guardarEdicionViaje} onCerrar={()=>setModal(null)} editando={true} lugaresGuardados={lugaresGuardados}/>}
       {modal==="gasto" &&<ModalGasto fG={fG} setFG={setFG} onAgregar={agregarGasto} onCerrar={()=>setModal(null)}/>}
       {modal==="nafta" &&<ModalNafta fN={fN} setFN={setFN} onAgregarComoGasto={(costo,km)=>{setGastos(p=>[...p,{id:Date.now(),cat:"nafta",desc:`Nafta — ${km} km`,monto:costo,fecha:new Date().toLocaleDateString("es-AR")}]);setModal(null);}} onCerrar={()=>setModal(null)}/>}
       {modal==="parada"&&<ModalAgregarParada opcionSel={opcionSel} onAgregar={agregarParada} onCerrar={()=>setModal(null)}/>}
       {modal==="editarParada"&&<ModalEditarParada f={fEP} setF={setFEP} onGuardar={guardarEdicionParada} onCerrar={()=>setModal(null)}/>}
-      <div style={S.nav}>
-        {TABS.map(t=>(
-          <button key={t.id} style={{...S.nvb(tab===t.id,t.color),position:"relative"}} onClick={()=>setTab(t.id)} aria-label={t.label}>
-            <span style={{fontSize:18}}>{t.icon}</span>
-            <span style={{fontSize:9,fontWeight:tab===t.id?"bold":"normal"}}>{t.label}</span>
-            {t.id==="historial"&&historial.length>0&&<div style={{position:"absolute",top:6,right:"50%",transform:"translateX(10px)",background:"#718096",color:"white",borderRadius:"50%",width:15,height:15,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center"}}>{historial.length}</div>}
-          </button>
-        ))}
-      </div>
+      <NavBar tab={tab} setTab={setTab} historial={historial} diseno={diseno}/>
     </div>
   );
 }
